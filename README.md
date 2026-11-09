@@ -15,9 +15,9 @@ Mac에서 실행 중인 멜론의 볼륨, 재생 상태, 재생목록을 Stream 
 
 ## 멜론 실행 아이콘
 
-![Hexaza 배경의 멜론 실행 아이콘](local.melon.launcher.sdIconPack/icons/melon.png)
+멜론 실행 아이콘은 **Hexaza Custom** 통합팩에 들어 있습니다. [아이콘 미리보기 및 다운로드](https://github.com/andrew427dev/hexaza-custom/releases/latest)
 
-아이콘 팩을 열어 설치한 뒤 **시스템 → 응용 프로그램 열기** 키의 앱으로 **Melon**을 선택해 주세요. 아이콘 라이브러리에서 `melon`을 검색하면 같은 아이콘을 다른 키에도 지정할 수 있습니다. [아이콘 팩 다운로드](https://github.com/andrew427dev/streamdeck-melon/releases/download/icons-v1.0.0/local.melon.launcher.streamDeckIconPack)
+릴리스에서 `local.hexaza.custom.streamDeckIconPack`을 내려받아 두 번 클릭해 주세요. Stream Deck에서 **시스템 → 응용 프로그램 열기** 키의 앱을 **Melon**으로 설정한 뒤, 아이콘 라이브러리의 **Hexaza Custom**에서 `melon`을 선택해 주세요.
 
 ## 개발
 

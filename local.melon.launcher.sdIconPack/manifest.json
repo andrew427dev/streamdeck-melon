@@ -1,9 +1,0 @@
-{
-  "Name": "melon",
-  "Version": "1.0.0",
-  "Description": "Hexaza 배경에 멜론 심벌을 넣은 앱 실행 키입니다.",
-  "Author": "andrew427dev",
-  "URL": "https://github.com/andrew427dev/streamdeck-melon",
-  "Icon": "icon.png",
-  "License": "license.txt"
-}
