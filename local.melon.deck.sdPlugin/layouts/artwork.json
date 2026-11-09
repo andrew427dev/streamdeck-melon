@@ -1,0 +1,11 @@
+{
+  "id": "melon-player-art",
+  "controller": "Encoder",
+  "items": [
+    { "key": "cover", "type": "pixmap", "rect": [9, 25, 46, 46] },
+    { "key": "title", "type": "text", "rect": [65, 5, 125, 23], "font": { "size": 15, "weight": 600 }, "color": "#ADFA70", "alignment": "left", "text-overflow": "ellipsis" },
+    { "key": "value", "type": "text", "rect": [65, 29, 125, 33], "font": { "size": 23, "weight": 600 }, "color": "#F1F6F1", "alignment": "left", "text-overflow": "ellipsis" },
+    { "key": "hint", "type": "text", "rect": [65, 64, 125, 23], "font": { "size": 15, "weight": 500 }, "color": "#B5C8BC", "alignment": "left", "text-overflow": "ellipsis" },
+    { "key": "level", "type": "bar", "rect": [12, 92, 176, 3], "value": 0, "range": { "min": 0, "max": 100 }, "bar_fill_c": "#ADFA70", "bar_bg_c": "#263C32", "bar_border_c": "#263C32", "border_w": 0, "enabled": false }
+  ]
+}

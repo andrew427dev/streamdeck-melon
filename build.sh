@@ -10,5 +10,6 @@ for arch in arm64 x86_64; do
 done
 xcrun lipo -create "$work/arm64" "$work/x86_64" -output "$plugin/bin/MelonBridge"
 /usr/bin/codesign --force -s - -i local.melon.deck.bridge "$plugin/bin/MelonBridge"
+node scripts/build-faces.mjs
 node --test test/plugin.test.mjs
 streamdeck pack "$plugin" --force --output .

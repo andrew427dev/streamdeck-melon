@@ -5,7 +5,7 @@
   "Author": "Melon Deck",
   "Description": "Mac 멜론 플레이어의 재생, 볼륨, 재생목록을 Stream Deck +에서 조작합니다.",
   "UUID": "local.melon.deck",
-  "Version": "1.0.0.2",
+  "Version": "1.0.1.1",
   "Icon": "imgs/plugin",
   "CategoryIcon": "imgs/category",
   "CodePath": "bin/plugin.js",
@@ -34,7 +34,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/multimedia-key",
+          "Image": "imgs/faces/multimedia-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -46,7 +46,8 @@
           "Push": "재생 / 일시정지",
           "Touch": "재생 / 일시정지",
           "LongTouch": "컬렉션 열기 / 닫기"
-        }
+        },
+        "Icon": "imgs/faces/multimedia-dial"
       }
     },
     {
@@ -59,7 +60,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/queue-key",
+          "Image": "imgs/faces/queue-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -70,7 +71,8 @@
           "Rotate": "목록 탐색",
           "Push": "선택한 곡 재생",
           "Touch": "선택한 곡 재생"
-        }
+        },
+        "Icon": "imgs/faces/queue-dial"
       }
     },
     {
@@ -83,7 +85,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/playback-key",
+          "Image": "imgs/faces/playback-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -100,7 +102,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/volume-key",
+          "Image": "imgs/faces/volume-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -111,7 +113,8 @@
           "Rotate": "볼륨 조절",
           "Push": "재생 / 일시정지",
           "Touch": "재생 / 일시정지"
-        }
+        },
+        "Icon": "imgs/faces/volume-dial"
       }
     },
     {
@@ -124,7 +127,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/shuffle-key",
+          "Image": "imgs/faces/shuffle-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -140,7 +143,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/repeat-key",
+          "Image": "imgs/faces/repeat-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -156,7 +159,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/like-key",
+          "Image": "imgs/faces/like-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -172,7 +175,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/add-key",
+          "Image": "imgs/faces/add-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -189,7 +192,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/collection-key",
+          "Image": "imgs/faces/collection-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -200,7 +203,8 @@
           "Rotate": "목록 탐색",
           "Push": "선택한 곡 재생",
           "Touch": "선택한 곡 재생"
-        }
+        },
+        "Icon": "imgs/faces/collection-dial"
       }
     },
     {
@@ -214,7 +218,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/search-key",
+          "Image": "imgs/faces/search-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -225,7 +229,8 @@
           "Rotate": "목록 탐색",
           "Push": "선택한 곡 재생",
           "Touch": "선택한 곡 재생"
-        }
+        },
+        "Icon": "imgs/faces/search-dial"
       }
     },
     {
@@ -238,7 +243,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/sleep-key",
+          "Image": "imgs/faces/sleep-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -255,7 +260,7 @@
       ],
       "States": [
         {
-          "Image": "imgs/now-key",
+          "Image": "imgs/faces/now-key",
           "FontSize": 11,
           "TitleAlignment": "bottom"
         }
@@ -266,7 +271,8 @@
           "Rotate": "볼륨 조절",
           "Push": "재생 / 일시정지",
           "Touch": "재생 / 일시정지"
-        }
+        },
+        "Icon": "imgs/faces/now-dial"
       }
     }
   ],

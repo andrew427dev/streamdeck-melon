@@ -1,14 +1,12 @@
 import {execFile,spawn} from 'node:child_process';
-import {chmodSync,statSync,readFileSync} from 'node:fs';
+import {chmodSync,statSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {search, exactSong, coverFor, collection, playURL} from './catalog.mjs';
 
+import {keyLine,keySVG,stripFeedback} from './faces.mjs';
+
 const execute=promisify(execFile);
-const keyIcons=Object.fromEntries(['previous','next','play','pause'].map(key=>{
-  const data=readFileSync(new URL('../imgs/'+key+'@2x.png',import.meta.url));
-  return [key,'data:image/png;base64,'+data.toString('base64')];
-}));
 const bridge=fileURLToPath(new URL('./MelonBridge',import.meta.url));
 // Stream Deck extracts secondary executables without their owner-execute bit.
 const bridgeMode=statSync(bridge).mode;
@@ -97,7 +95,7 @@ function draw(c) {
       level=(c.item.index+1)*100/c.item.count;
     } else {
       value=c.kind==='search' ? s.query || '검색어 설정' : '돌려서 탐색';
-      hint=c.kind==='queue'?'멜론 재생목록':'눌러서 선택';
+      hint='';
     }
   } else if (c.kind==='sleep') {
     const left=runningTime();
@@ -106,13 +104,14 @@ function draw(c) {
   } else if (c.kind==='volume') {
     value=state.volume==null?'—':Math.round(state.volume)+'%';
     level=state.volume??0;
-    hint='멜론 볼륨';
+    hint='';
   } else if (c.kind==='shuffle') value=state.shuffle==null?'—':state.shuffle?'켬':'끔';
   else if (c.kind==='repeat') value=state.repeat || '반복 전환';
   else if (['now','multimedia','playback'].includes(c.kind)) {
     title=state.playing?'재생 중':state.playing===false?'일시정지':'멜론';
-    value=state.title||'멜론';
-    hint=state.artist||'곡을 선택해 주세요';
+    value=state.title || title;
+    hint=state.artist||'';
+    if (!state.title) title='멜론 플레이어';
     level=state.volume??0;
     if (s.showArtwork!==false) image=art;
   } else if (c.kind==='add') value=s.destination==='favorites'?'다이얼 보관함':s.list||'목록 이름 설정';
@@ -122,22 +121,70 @@ function draw(c) {
   let event, payload;
   if (c.encoder) {
     event='setFeedback';
-    payload={title,value,hint,level:Math.round(level),cover:image||'imgs/idle.png'};
+    const layout=image?'layouts/artwork.json':'layouts/player.json';
+    if (layout!==c.layout) {
+      send('setFeedbackLayout',c.id,{layout});
+      c.layout=layout;
+      c.drawn=null;
+    }
+    if (!c.dialImageSent) {
+      const svg=keySVG(c.kind,{dial:true});
+      send('setImage',c.id,{image:'data:image/svg+xml;base64,'+Buffer.from(svg).toString('base64')});
+      c.dialImageSent=true;
+    }
+    const showLevel = (c.kind==='volume' && state.volume!=null) || (isBrowse && Boolean(c.item));
+    payload=stripFeedback({title,value,hint,cover:image,level,showLevel});
   } else {
     event='setTitle';
-    let key=({playback:{toggle:'재생 / 정지',play:'재생',pause:'일시정지',next:'다음 곡',previous:'이전 곡'}[s.command||'toggle'],
-      volume:Number(s.direction||1)>0?'볼륨 +':'볼륨 −',like:'좋아요',add:s.destination==='favorites'?'보관함에 담기':'목록에 담기'})[c.kind];
-    if (c.kind==='now') key=[state.title||'멜론',state.artist].filter(Boolean).join('\n');
-    if (c.kind==='search') key=s.query||'저장된 검색';
-    if (c.kind==='collection') { try {key=usesFavorites(c)?(savedSongs()[0]?.title||'다이얼 보관함'):collection(s.entries)[0].title;} catch {key='컬렉션 설정';} }
-    if (c.kind==='sleep'||c.kind==='shuffle'||c.kind==='repeat') key=title+'\n'+value;
-    if (c.notice && c.notice.until>Date.now()) key=c.notice.text;
-    payload={title:key||value||title,target:0};
-    if (c.kind==='playback') {
-      const id=s.command&&s.command!=='toggle'?s.command:state.playing?'pause':'play';
-      image=keyIcons[id]||'';
+    let symbol=c.kind;
+    let active=false;
+    let lines;
+    switch (c.kind) {
+      case 'playback': {
+        const op=s.command||'toggle';
+        symbol=op==='toggle'?(state.playing?'pause':'play'):op;
+        lines=[{play:'재생',pause:'일시정지',next:'다음 곡',previous:'이전 곡'}[symbol]];
+        break;
+      }
+      case 'shuffle':
+        active=state.shuffle===true;
+        lines=[state.shuffle==null?'셔플':'셔플 '+value];
+        break;
+      case 'repeat':
+        active=Boolean(state.repeat && state.repeat!=='반복 없음');
+        lines=[state.repeat==='반복 없음'?'반복 끔':state.repeat||'반복'];
+        break;
+      case 'sleep':
+        active=runningTime()>0;
+        lines=[active?value:'취침 '+value];
+        break;
+      case 'now': lines=[state.title||value,state.artist].filter(Boolean);break;
+      case 'search': lines=[s.query||'저장된 검색'];break;
+      case 'collection':
+        try {lines=[usesFavorites(c)?(savedSongs()[0]?.title||'다이얼 보관함'):collection(s.entries)[0].title];}
+        catch {lines=['컬렉션 설정'];}
+        break;
+      case 'add': lines=[s.destination==='favorites'?'보관함 담기':'목록에 담기'];break;
+      case 'volume': lines=[Number(s.direction||1)>0?'볼륨 +':'볼륨 −'];break;
+      default: lines=[title];
     }
-    if (['now','playback'].includes(c.kind) && c.lastImage!==image) {send('setImage',c.id,{image,target:0});c.lastImage=image;}
+    if (c.notice && c.notice.until>Date.now()) lines=[c.notice.text];
+    const params=c.titleParams||{};
+    const fontSize=Number(params.fontSize)||11;
+    const formatted=lines.map(line=>keyLine(line,fontSize)).join('\n');
+    payload={title:formatted,target:0};
+    // A custom native title can have a different alignment or number of lines.
+    const visibleLines=params.showTitle===false?0:Math.max(lines.length,c.customLines||0);
+    const alignment=params.titleAlignment||'bottom';
+    const cover=c.kind==='now'?image:'';
+    const style=[symbol,visibleLines,fontSize,alignment,active].join('/');
+    if (style!==c.faceStyle || cover!==c.cover) {
+      const svg=keySVG(symbol,{lines:visibleLines,fontSize,alignment,active,cover});
+      send('setImage',c.id,{image:'data:image/svg+xml;base64,'+Buffer.from(svg).toString('base64'),target:0});
+      c.faceStyle=style;
+      c.cover=cover;
+    }
+    c.defaultTitle=formatted;
   }
   const snapshot=JSON.stringify(payload);
   if (snapshot!==c.drawn) {send(event,c.id,payload);c.drawn=snapshot;}
@@ -283,6 +330,12 @@ socket.addEventListener('message',({data})=>{
     return;
   }
   if (!c) return;
+  if (event==='titleParametersDidChange' && !c.encoder) {
+    c.titleParams=payload.titleParameters;
+    c.customLines=payload.title && payload.title!==c.defaultTitle ? payload.title.split(/\r?\n/).length : 0;
+    draw(c);
+    return;
+  }
   if (event==='didReceiveSettings') {
     c.settings=payload.settings||{};c.item=null;c.entries=null;updateArt();draw(c);return;
   }
