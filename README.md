@@ -13,6 +13,12 @@ Mac에서 실행 중인 멜론의 볼륨, 재생 상태, 재생목록을 Stream 
 
 세 번째 다이얼을 돌리면 멜론 볼륨이 기본 5%씩 바뀝니다. 한 번 눌러 재생하거나 멈추고, 두 번 눌러 다음 곡으로, 세 번 눌러 이전 곡으로 이동합니다. 네 번째 다이얼은 대기열을 탐색하며, 누르거나 터치해 선택한 곡을 재생합니다. [전체 조작법과 지원 범위](사용안내.md)
 
+## 멜론 실행 아이콘
+
+![Hexaza 배경의 멜론 실행 아이콘](local.melon.launcher.sdIconPack/icons/melon.png)
+
+아이콘 팩을 열어 설치한 뒤 **시스템 → 응용 프로그램 열기** 키의 앱으로 **Melon**을 선택해 주세요. 아이콘 라이브러리에서 `melon`을 검색하면 같은 아이콘을 다른 키에도 지정할 수 있습니다. [아이콘 팩 다운로드](https://github.com/andrew427dev/streamdeck-melon/releases/download/icons-v1.0.0/local.melon.launcher.streamDeckIconPack)
+
 ## 개발
 
 Xcode Command Line Tools와 Node.js 22 이상을 사용합니다. 저장소 루트에서 다음 명령을 실행해 주세요.
