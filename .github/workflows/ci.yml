@@ -17,7 +17,10 @@ jobs:
       - name: 설치 파일과 Universal 실행 파일 검사
         run: |
           unzip -tq local.melon.deck.streamDeckPlugin
-          lipo -verify_arch arm64 x86_64 local.melon.deck.sdPlugin/bin/MelonBridge
+          architectures=$(lipo -archs local.melon.deck.sdPlugin/bin/MelonBridge)
+          for arch in arm64 x86_64; do
+            grep -qw "$arch" <<< "$architectures"
+          done
           codesign --verify --strict local.melon.deck.sdPlugin/bin/MelonBridge
           shasum -a 256 local.melon.deck.streamDeckPlugin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
