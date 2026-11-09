@@ -1,0 +1,16 @@
+{
+  "name": "streamdeck-melon",
+  "private": true,
+  "description": "macOS용 멜론 플레이어를 조작하는 Stream Deck + 플러그인",
+  "repository": "github:andrew427dev/streamdeck-melon",
+  "scripts": {
+    "test": "node --test test/plugin.test.mjs",
+    "build": "./build.sh"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@elgato/cli": "1.10.2"
+  }
+}

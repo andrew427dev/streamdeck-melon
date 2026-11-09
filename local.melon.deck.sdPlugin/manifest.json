@@ -1,0 +1,281 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "멜론",
+  "Category": "멜론",
+  "Author": "Melon Deck",
+  "Description": "Mac 멜론 플레이어의 재생, 볼륨, 재생목록을 Stream Deck +에서 조작합니다.",
+  "UUID": "local.melon.deck",
+  "Version": "1.0.0.2",
+  "Icon": "imgs/plugin",
+  "CategoryIcon": "imgs/category",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 3,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "Nodejs": {
+    "Version": "24"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    }
+  ],
+  "PropertyInspectorPath": "ui/index.html",
+  "Actions": [
+    {
+      "UUID": "local.melon.deck.multimedia",
+      "Name": "멀티미디어",
+      "Tooltip": "다이얼을 돌려 볼륨을 조절하고 눌러서 재생합니다.",
+      "Icon": "imgs/multimedia-action",
+      "Controllers": [
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/multimedia-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/player.json",
+        "TriggerDescription": {
+          "Rotate": "볼륨 조절",
+          "Push": "재생 / 일시정지",
+          "Touch": "재생 / 일시정지",
+          "LongTouch": "컬렉션 열기 / 닫기"
+        }
+      }
+    },
+    {
+      "UUID": "local.melon.deck.queue",
+      "Name": "재생 대기열",
+      "Tooltip": "다이얼로 멜론 재생목록을 훑고 누르거나 터치해 해당 곡부터 듣습니다.",
+      "Icon": "imgs/queue-action",
+      "Controllers": [
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/queue-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/player.json",
+        "TriggerDescription": {
+          "Rotate": "목록 탐색",
+          "Push": "선택한 곡 재생",
+          "Touch": "선택한 곡 재생"
+        }
+      }
+    },
+    {
+      "UUID": "local.melon.deck.playback",
+      "Name": "재생 제어",
+      "Tooltip": "재생, 일시정지, 이전 곡, 다음 곡을 버튼에 지정합니다.",
+      "Icon": "imgs/playback-action",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/playback-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "UUID": "local.melon.deck.volume",
+      "Name": "멜론 볼륨",
+      "Tooltip": "멜론 앱의 볼륨을 조절합니다.",
+      "Icon": "imgs/volume-action",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/volume-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/player.json",
+        "TriggerDescription": {
+          "Rotate": "볼륨 조절",
+          "Push": "재생 / 일시정지",
+          "Touch": "재생 / 일시정지"
+        }
+      }
+    },
+    {
+      "UUID": "local.melon.deck.shuffle",
+      "Name": "셔플",
+      "Tooltip": "멜론의 셔플 재생을 전환합니다.",
+      "Icon": "imgs/shuffle-action",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/shuffle-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "UUID": "local.melon.deck.repeat",
+      "Name": "반복",
+      "Tooltip": "멜론의 곡 반복 방식을 전환합니다.",
+      "Icon": "imgs/repeat-action",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/repeat-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "UUID": "local.melon.deck.like",
+      "Name": "좋아요",
+      "Tooltip": "현재 재생 곡의 좋아요를 멜론 곡 메뉴에서 변경합니다.",
+      "Icon": "imgs/like-action",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/like-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "UUID": "local.melon.deck.add",
+      "Name": "플레이리스트에 담기",
+      "Tooltip": "현재 곡을 설정에 지정한 내 멜론 플레이리스트에 담습니다.",
+      "Icon": "imgs/add-action",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/add-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "UUID": "local.melon.deck.collection",
+      "Name": "컬렉션 재생",
+      "Tooltip": "등록한 멜론 곡, 앨범, 플레이리스트를 골라 재생합니다.",
+      "Icon": "imgs/collection-action",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/collection-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/player.json",
+        "TriggerDescription": {
+          "Rotate": "목록 탐색",
+          "Push": "선택한 곡 재생",
+          "Touch": "선택한 곡 재생"
+        }
+      }
+    },
+    {
+      "UUID": "local.melon.deck.search",
+      "Name": "저장된 검색",
+      "Tooltip": "저장한 검색어의 결과를 탐색하고 재생합니다.",
+      "Icon": "imgs/search-action",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/search-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/player.json",
+        "TriggerDescription": {
+          "Rotate": "목록 탐색",
+          "Push": "선택한 곡 재생",
+          "Touch": "선택한 곡 재생"
+        }
+      }
+    },
+    {
+      "UUID": "local.melon.deck.sleep",
+      "Name": "취침 타이머",
+      "Tooltip": "설정한 시간이 지나면 멜론을 일시정지합니다.",
+      "Icon": "imgs/sleep-action",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/sleep-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "UUID": "local.melon.deck.now",
+      "Name": "지금 재생 중",
+      "Tooltip": "현재 곡과 가수, 확인된 앨범 커버를 표시합니다.",
+      "Icon": "imgs/now-action",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/now-key",
+          "FontSize": 11,
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/player.json",
+        "TriggerDescription": {
+          "Rotate": "볼륨 조절",
+          "Push": "재생 / 일시정지",
+          "Touch": "재생 / 일시정지"
+        }
+      }
+    }
+  ],
+  "Profiles": [
+    {
+      "Name": "profiles/melon-plus",
+      "DeviceType": 7,
+      "AutoInstall": true,
+      "DontAutoSwitchWhenInstalled": true
+    }
+  ]
+}

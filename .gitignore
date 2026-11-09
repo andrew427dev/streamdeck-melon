@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+*.streamDeckPlugin
+local.melon.deck.sdPlugin/bin/MelonBridge
+local.melon.deck.sdPlugin/logs/
+*.log

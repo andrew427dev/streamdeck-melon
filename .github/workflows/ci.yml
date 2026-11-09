@@ -1,0 +1,29 @@
+name: macOS 플러그인 검증
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: 설치 파일과 Universal 실행 파일 검사
+        run: |
+          unzip -tq local.melon.deck.streamDeckPlugin
+          lipo -verify_arch arm64 x86_64 local.melon.deck.sdPlugin/bin/MelonBridge
+          codesign --verify --strict local.melon.deck.sdPlugin/bin/MelonBridge
+          shasum -a 256 local.melon.deck.streamDeckPlugin > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: streamdeck-melon-macos
+          path: |
+            local.melon.deck.streamDeckPlugin
+            SHA256SUMS.txt
+          if-no-files-found: error
