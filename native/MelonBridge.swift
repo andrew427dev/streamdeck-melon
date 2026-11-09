@@ -118,6 +118,7 @@ struct Player {
             result["artist"] = track.artist
             // The seek control is attached to the window; the volume slider is inside the player bar.
             if let seek = windows.lazy.flatMap({ nodes($0) }).first(where: { role($0) == "AXSlider" }),
+               (attribute(seek,"AXEnabled") as? Bool) != false,
                let position = attribute(seek,"AXValue") as? NSNumber,
                let maximum = attribute(seek,"AXMaxValue") as? NSNumber,
                maximum.doubleValue > 0, position.doubleValue >= 0, position.doubleValue <= maximum.doubleValue {

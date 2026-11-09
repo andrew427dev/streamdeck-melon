@@ -10,7 +10,7 @@ import {keyLine,keySVG,stripFeedback} from '../local.melon.deck.sdPlugin/bin/fac
 import {albumFromListing,collection,playURL} from '../local.melon.deck.sdPlugin/bin/catalog.mjs';
 
 test('실행 및 종료 화면에서 같은 깊이의 요소가 서로 겹치지 않습니다',async()=>{
- for(const layout of ['closed','queue','transport']){
+ for(const layout of ['launch','queue','transport']){
    const path=new URL('../local.melon.deck.sdPlugin/layouts/'+layout+'.json',import.meta.url);
    const {items}=JSON.parse(await readFile(path,'utf8'));
    for(const [index,a] of items.entries()){

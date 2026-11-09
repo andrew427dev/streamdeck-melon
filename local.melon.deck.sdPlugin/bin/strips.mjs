@@ -14,7 +14,7 @@ function controls(state) {
 
 export function dialStrip(kind,state,{item,cover,notice,browsing}={}) {
   if (kind!=='multimedia' && kind!=='queue') return;
-  if (state.running===false) return {layout:'closed',feedback:{logo,launch:'멜론 열기',status:'실행 중 아님'}};
+  if (state.running===false) return {layout:'launch',feedback:{logo,launch:'멜론 열기',status:'실행 중 아님'}};
   if (browsing) return;
   if (kind==='queue') {
     const song=item?.title;
