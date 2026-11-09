@@ -329,13 +329,28 @@ struct Player {
         if op == "queuePlay" {
             guard request["title"] as? String == info.title, request["artist"] as? String == info.artist,
                   request["index"] as? Int == index else { throw Problem("목록이 바뀌었습니다. 다시 선택해 주세요") }
-            try clickRow(row,table:table,context:false)
-            guard poll({
-                guard let state=try? self.state(),state["playing"] as? Bool==true,
-                      let t=state["title"] as? String,let a=state["artist"] as? String,
-                      t+" - "+a==info.title+" - "+info.artist else {return nil as Bool?}
-                return true
-            }) == true else { throw Problem("선택한 곡의 재생을 확인할 수 없습니다") }
+            func matchesTarget(_ status: Record) -> Bool {
+                return status["title"] as? String == info.title && status["artist"] as? String == info.artist
+            }
+            let before = try state()
+            // The player's Next command works even when the queue window is behind another app.
+            // Use it only when playback order and the displayed target row agree.
+            let isNext = before["shuffle"] as? Bool == false && !matchesTarget(before) &&
+                (try? currentIndex()).map { $0 + 1 == index } == true
+            if isNext {
+                try playback("next")
+            } else {
+                try clickRow(row,table:table,context:false)
+            }
+            func targetStatus() -> Record? {
+                guard let status = try? state(), matchesTarget(status) else { return nil }
+                return status
+            }
+            guard let selected = poll(targetStatus) else { throw Problem("선택한 곡의 재생을 확인할 수 없습니다") }
+            if selected["playing"] as? Bool == false { try playback("play") }
+            guard poll({ targetStatus()?["playing"] as? Bool == true ? true : nil }) == true else {
+                throw Problem("선택한 곡의 재생을 확인할 수 없습니다")
+            }
         }
         if op == "like" || op == "add" {
             try clickRow(row,table:table,context:true)

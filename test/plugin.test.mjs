@@ -116,6 +116,8 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  assert.ok(messages.some(m=>m.context==='dial' && m.payload?.elapsed==='1:33' && m.payload.duration==='5:00' && m.payload.progress.value===31));
  send('willAppear','q',{controller:'Encoder',settings:{}},'queue');
  await until(()=>messages.some(m=>m.context==='q' && m.payload?.song==='▸ 대기 곡' && m.payload.following==='↳ 다다음 곡'));
+ send('touchTap','q',{tapPos:[100,50],hold:false},'queue');
+ await until(async()=>(await ops()).some(x=>x.op==='queuePlay' && x.index===2 && x.title==='대기 곡' && x.artist==='다음 가수'));
  send('dialRotate','q',{ticks:3},'queue');
  await until(()=>messages.some(m=>m.context==='q'&&m.payload?.song==='▸ 테스트'));
  send('touchTap','q',{},'queue');
