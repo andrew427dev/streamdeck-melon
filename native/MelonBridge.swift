@@ -282,8 +282,9 @@ struct Player {
     func queue(_ request: Record, _ op: String) throws -> Record {
         let table: Element
         if op == "queuePreview" {
-            guard let visibleTable = queueTable() else { return [:] }
-            table = visibleTable
+            if let visibleTable = queueTable() { table = visibleTable }
+            else if request["restoreOnLaunch"] as? Bool == true { table = try openQueue() }
+            else { return [:] }
         } else {
             table = try openQueue()
         }

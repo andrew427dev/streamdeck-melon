@@ -37,6 +37,7 @@ const pluginID=arg('-pluginUUID');
 const actions=new Map();
 let state={}, globalSettings={}, ready=false, busy=Promise.resolve(), refreshing=false, deadlineBusy=false;
 let liveQueue=null, queueKey='', lastQueueRead=0, pendingQueue=null;
+let restoreQueueOnLaunch=false;
 let artKey='', art='', artAttempt=0;
 const labels={multimedia:'멀티미디어',queue:'재생 대기열',playback:'재생 제어',volume:'볼륨',shuffle:'셔플',repeat:'반복',like:'좋아요',add:'목록에 담기',collection:'컬렉션',search:'저장된 검색',sleep:'취침 타이머',now:'지금 재생 중'};
 const count=(n,min,max,defaultValue)=>Number.isFinite(Number(n)) ? Math.min(max,Math.max(min,Math.round(Number(n)))) : defaultValue;
@@ -213,7 +214,9 @@ function updateQueue() {
   }
   if (!key || pendingQueue || Date.now()-lastQueueRead<10000) return;
   lastQueueRead=Date.now();
-  pendingQueue=native('queuePreview',{currentIndex:liveQueue?.currentIndex})
+  const restoreOnLaunch=restoreQueueOnLaunch && Boolean(state.title) && [...actions.values()].some(c=>c.encoder && c.kind==='queue');
+  if (restoreOnLaunch) restoreQueueOnLaunch=false;
+  pendingQueue=native('queuePreview',{currentIndex:liveQueue?.currentIndex,restoreOnLaunch})
     .then(result=>{if (key===queueKey) liveQueue=result;})
     .catch(()=>{if (key===queueKey) liveQueue=null;})
     .finally(()=>{pendingQueue=null;updateArt();drawAll();});
@@ -225,6 +228,7 @@ async function refresh() {
   catch(e){state={error:textError(e)};}
   finally {refreshing=false;}
   if (state.running===false) {
+    restoreQueueOnLaunch=[...actions.values()].some(c=>c.encoder && c.kind==='queue');
     for (const c of actions.values()) {
       if (c.encoder && (c.kind==='multimedia' || c.kind==='queue')) {
         c.browsing=false;c.item=null;c.notice=null;

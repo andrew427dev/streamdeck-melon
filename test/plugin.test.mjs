@@ -9,6 +9,20 @@ import {setTimeout as wait} from 'node:timers/promises';
 import {keyLine,keySVG,stripFeedback} from '../local.melon.deck.sdPlugin/bin/faces.mjs';
 import {albumFromListing,collection,playURL} from '../local.melon.deck.sdPlugin/bin/catalog.mjs';
 
+test('실행 및 종료 화면에서 같은 깊이의 요소가 서로 겹치지 않습니다',async()=>{
+ for(const layout of ['closed','queue','transport']){
+   const path=new URL('../local.melon.deck.sdPlugin/layouts/'+layout+'.json',import.meta.url);
+   const {items}=JSON.parse(await readFile(path,'utf8'));
+   for(const [index,a] of items.entries()){
+     for(const b of items.slice(index+1)){
+       if((a.zOrder??0)!==(b.zOrder??0)) continue;
+       const [x,y,w,h]=a.rect, [bx,by,bw,bh]=b.rect;
+       assert.ok(x+w<=bx || bx+bw<=x || y+h<=by || by+bh<=y,layout+' / '+a.key+' / '+b.key);
+     }
+   }
+ }
+});
+
 test('멜론 컬렉션의 종류, 이름, 재생 주소를 보존합니다',()=>{
  const items=collection('밤편지 | https://www.melon.com/song/detail.htm?songId=30314784\n앨범 | album:10047890\n목록 | playlist:1234');
  assert.deepEqual(items.map(i=>i.type),['song','album','playlist']);
@@ -124,6 +138,7 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
    send(event,id,{},kind);
    await until(async()=>(await ops()).slice(countBefore).some(x=>x.op==='launch'));
    await until(()=>messages.some(m=>m.context===id && m.payload?.layout==='layouts/'+(kind==='queue'?'queue':'transport')+'.json'));
+   await until(async()=>(await ops()).slice(countBefore).some(x=>x.op==='queuePreview' && x.restoreOnLaunch===true));
    const launched=(await ops()).slice(countBefore).filter(x=>x.op!=='queuePreview');
    assert.deepEqual(launched,[{op:'launch',args:['-b','com.iloen.macmelon']}]);
  }
