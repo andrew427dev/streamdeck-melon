@@ -21,7 +21,9 @@ func nodes(_ node: Element, _ key: String = "AXChildren") -> [Element] {
     attribute(node, key) as? [Element] ?? []
 }
 func string(_ element: Element, _ name: String) -> String {
-    if let value = attribute(element, name) as? String { return value }
+    let raw = attribute(element, name)
+    if let value = raw as? String { return value }
+    if let value = raw as? NSAttributedString { return value.string }
     return ""
 }
 func role(_ node: Element) -> String { string(node, "AXRole") }
@@ -93,7 +95,7 @@ struct Player {
     func current(_ inner: [Element]) -> (title: String, artist: String) {
         // Melon exposes the marquee as a combined title/artist accessibility label.
         if let label = find(inner, depth:2, { n,r in
-            r == "AXStaticText" && name(n).contains(" - ")
+            name(n).contains(" - ")
         }) {
             let text = name(label)
             if let split = text.range(of:" - ",options:.backwards) {
@@ -114,6 +116,31 @@ struct Player {
             let track = current(p.inner)
             result["title"] = track.title
             result["artist"] = track.artist
+            // The seek control is attached to the window; the volume slider is inside the player bar.
+            if let seek = windows.lazy.flatMap({ nodes($0) }).first(where: { role($0) == "AXSlider" }),
+               let position = attribute(seek,"AXValue") as? NSNumber,
+               let maximum = attribute(seek,"AXMaxValue") as? NSNumber,
+               maximum.doubleValue > 0, position.doubleValue >= 0, position.doubleValue <= maximum.doubleValue {
+                result["elapsed"] = position.intValue
+                result["duration"] = maximum.intValue
+            } else {
+                // Some versions expose both clocks on a text element, via separate AX attributes.
+                for node in p.inner {
+                    let labels = ["AXTitle","AXValue","AXDescription"].map { string(node,$0) }
+                    let clocks = labels.joined(separator:" ").split(whereSeparator: { !$0.isNumber && $0 != ":" })
+                    let seconds = clocks.compactMap { clock -> Int? in
+                        let pair = clock.split(separator:":")
+                        guard pair.count == 2, let m = Int(pair[0]), let s = Int(pair[1]), s < 60 else { return nil }
+                        return m * 60 + s
+                    }
+                    if seconds.count >= 2 {
+                        let pair = seconds.prefix(2)
+                        result["duration"] = pair.max()
+                        result["elapsed"] = pair.min()
+                        break
+                    }
+                }
+            }
             let toggles = p.inner.filter { role($0) == "AXCheckBox" }
             if let first = toggles.first, let on = attribute(first,"AXValue") as? NSNumber { result["playing"] = on.boolValue }
             if toggles.count >= 2, let on = attribute(toggles[1],"AXValue") as? NSNumber { result["shuffle"] = on.boolValue }
@@ -161,7 +188,7 @@ struct Player {
         guard let table = poll({queueTable()}) else { throw Problem("멜론 재생목록에서 ‘곡’ 탭을 열어 주세요") }
         return table
     }
-    func rowInfo(_ row: Element) -> (title: String, artist: String, active: Bool) {
+    func rowInfo(_ row: Element) -> (title: String, artist: String, album: String, active: Bool) {
         let cells = nodes(row)
         var texts: [String] = []
         var active = false
@@ -170,7 +197,7 @@ struct Player {
             if contents.contains(where:{ name($0).replacingOccurrences(of:"_",with:" ").contains("eq playlist") }) { active = true }
             if let text = contents.first(where:{ role($0) == "AXStaticText" }), !name(text).isEmpty { texts.append(name(text)) }
         }
-        return (texts.first ?? "", texts.count > 1 ? texts[1] : "", active)
+        return (texts.first ?? "", texts.count > 1 ? texts[1] : "", texts.count > 2 ? texts[2] : "", active)
     }
     func reveal(_ row: Element, table: Element) throws {
         guard AXUIElementSetAttributeValue(table,"AXSelectedRows" as CFString,[row] as CFArray) == .success ||
@@ -253,13 +280,21 @@ struct Player {
         }
     }
     func queue(_ request: Record, _ op: String) throws -> Record {
-        let table = try openQueue()
+        let table: Element
+        if op == "queuePreview" {
+            guard let visibleTable = queueTable() else { return [:] }
+            table = visibleTable
+        } else {
+            table = try openQueue()
+        }
         let rows = nodes(table,"AXRows")
         guard !rows.isEmpty else { throw Problem("재생목록이 비어 있습니다") }
         let visible = nodes(table,"AXVisibleRows")
         func currentIndex() throws -> Int {
             let track = current(try parts().inner)
-            let candidates = visible + rows.filter { !visible.contains($0) }
+            if let i = request["currentIndex"] as? Int, rows.indices.contains(i), rowInfo(rows[i]).active { return i }
+            let visibleSet = Set(visible)
+            let candidates = visible.isEmpty ? rows : visible + rows.filter { !visibleSet.contains($0) }
             var matching: [Element] = []
             for row in candidates {
                 let info = rowInfo(row)
@@ -270,12 +305,21 @@ struct Player {
             throw Problem("재생 중인 곡을 목록에서 찾을 수 없습니다")
         }
         let index: Int
-        if op == "like" || op == "add" { index = try currentIndex() }
+        var currentPosition: Int?
+        var album: String?
+        if op == "queuePreview" {
+            guard let playing = try? currentIndex() else { return [:] }
+            currentPosition = playing
+            album = rowInfo(rows[playing]).album
+            guard playing + 1 < rows.count else { return ["end":true,"currentIndex":playing,"album":album ?? ""] }
+            index = playing + 1
+        }
+        else if op == "like" || op == "add" { index = try currentIndex() }
         else if let i = request["index"] as? Int { index = min(rows.count-1,max(0,i)) }
         else { index = (try? currentIndex()) ?? 0 }
         let row = rows[index]
         var info = rowInfo(row)
-        if info.title.isEmpty {
+        if info.title.isEmpty && op != "queuePreview" {
             _ = AXUIElementPerformAction(row,"AXScrollToVisible" as CFString)
             info = rowInfo(row)
         }
@@ -309,7 +353,11 @@ struct Player {
                 try press(matches[0], "플레이리스트에 담을 수 없습니다")
             }
         }
-        return ["index":index,"count":rows.count,"title":info.title,"artist":info.artist]
+        var result: Record = ["index":index,"count":rows.count,"title":info.title,"artist":info.artist]
+        result["currentIndex"] = currentPosition
+        result["album"] = album
+        if index + 1 < rows.count { result["nextTitle"] = rowInfo(rows[index + 1]).title }
+        return result
     }
 }
 
@@ -326,7 +374,7 @@ func handle(_ r: Record) throws -> Record {
     case "status":return try p.state()
     case "volume":try p.volume(r["delta"] as? Int ?? 0)
     case "toggle","next","previous","play","pause","repeat","shuffle":try p.playback(op)
-    case "queue","queuePlay","like","add":return try p.queue(r,op)
+    case "queue","queuePreview","queuePlay","like","add":return try p.queue(r,op)
     default:throw Problem("알 수 없는 동작입니다")
     }
     return [:]

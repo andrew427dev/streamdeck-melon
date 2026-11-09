@@ -1,0 +1,74 @@
+{
+  "id": "melon-queue",
+  "controller": "Encoder",
+  "items": [
+    {
+      "key": "header",
+      "type": "text",
+      "rect": [
+        7,
+        4,
+        186,
+        22
+      ],
+      "font": {
+        "size": 15,
+        "weight": 500
+      },
+      "color": "#C9C9C9",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "song",
+      "type": "text",
+      "rect": [
+        7,
+        28,
+        186,
+        24
+      ],
+      "font": {
+        "size": 18,
+        "weight": 650
+      },
+      "color": "#FFFFFF",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "artist",
+      "type": "text",
+      "rect": [
+        23,
+        52,
+        169,
+        21
+      ],
+      "font": {
+        "size": 16,
+        "weight": 500
+      },
+      "color": "#E0E0E0",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "following",
+      "type": "text",
+      "rect": [
+        23,
+        76,
+        169,
+        20
+      ],
+      "font": {
+        "size": 14,
+        "weight": 500
+      },
+      "color": "#999999",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    }
+  ]
+}

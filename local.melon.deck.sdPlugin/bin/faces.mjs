@@ -47,6 +47,12 @@ export function keyLine(value, fontSize=11) {
 }
 
 export function keySVG(symbol, {dial=false, lines=0, fontSize=11, alignment='bottom', active=false, cover=''}={}) {
+  if (dial && (symbol==='multimedia' || symbol==='queue')) {
+    const mark=symbol==='multimedia'
+      ? '<path d="M21 21h30v22H21zM23 50h26"/><path d="m32 26 9 6-9 6z" fill="#fff" stroke="none"/>'
+      : '<rect x="21" y="23" width="30" height="7" rx="3.5"/><path d="M21 39h30M21 49h30"/>';
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 72 72"><rect width="72" height="72" fill="#202020"/><g fill="none" stroke="#fff" stroke-width="2.7" stroke-linejoin="round">'+mark+'</g></svg>';
+  }
   const neutral = glyphs[symbol] ?? glyphs.now;
   const band = lines ? Math.min(47, Math.ceil(lines*fontSize*1.28)+3) : 0;
   let top=5, bottom=67;

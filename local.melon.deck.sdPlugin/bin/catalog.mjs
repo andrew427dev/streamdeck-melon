@@ -31,18 +31,46 @@ export async function exactSong(title,artist) {
   return hits[0];
 }
 
+// The autocomplete endpoint only returns the first few tracks; the full listing also identifies the album.
+export function albumFromListing(html,track) {
+  const label = html => normalize(text(html.replace(/<[^>]*>/g,'')).replaceAll('&nbsp;',' '));
+  for (const row of html.split(/<tr\b/i)) {
+    const song = row.match(/<a\b[^>]*melon\.play\.playSong\([^>]*>([\s\S]*?)<\/a>/i);
+    const album = row.match(/<a\b[^>]*melon\.link\.goAlbumDetail\('(\d+)'\)[^>]*>([\s\S]*?)<\/a>/i);
+    if (!song || !album || label(song[1])!==normalize(track.title) || label(album[2])!==normalize(track.album)) continue;
+    const artists=[...row.matchAll(/<a\b[^>]*melon\.link\.goArtistDetail\([^>]*>([\s\S]*?)<\/a>/gi)].map(match=>label(match[1]));
+    if ([...new Set(artists)].join(', ')===normalize(track.artist)) return album[1];
+  }
+  return '';
+}
+
+async function albumCover(track) {
+  if (!track.album) return '';
+  const url=new URL('https://www.melon.com/search/song/index.htm');
+  url.searchParams.set('q',track.title+' '+track.artist);
+  const id=albumFromListing(await (await melonFetch(url)).text(),track);
+  if (!id) return '';
+  const html=await (await melonFetch('https://www.melon.com/album/detail.htm?albumId='+id)).text();
+  return html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i)?.[1]||'';
+}
+
 const artwork = new Map();
 export function coverFor(track) {
-  const key = JSON.stringify([track.title,track.artist]);
+  const key = JSON.stringify([track.title,track.artist,track.album]);
   const cached = artwork.get(key);
   if (cached && cached.expires > Date.now()) return cached.job;
   const job = (async () => {
     // The official search response can include similarly named recordings. Match both fields.
-    const matches = (await search(track.title)).filter(row => normalize(row.title) === normalize(track.title) && normalize(row.artist) === normalize(track.artist));
-    if (!matches.length || new Set(matches.map(row=>row.cover)).size !== 1 || !matches[0].cover) return '';
-    const url = new URL(matches[0].cover);
+    const rows=await search(track.title).catch(()=>[]);
+    const matches=rows.filter(row=>normalize(row.title)===normalize(track.title) &&
+      normalize(row.artist)===normalize(track.artist) && (!track.album || normalize(row.album)===normalize(track.album)));
+    const covers=new Set(matches.map(row=>row.cover).filter(Boolean));
+    const source=covers.size===1?[...covers][0]:await albumCover(track);
+    if (!source) return '';
+    const url = new URL(source);
     if (url.protocol !== 'https:' || url.hostname !== 'cdnimg.melon.co.kr') return '';
-    const response = await melonFetch(url.href.replace(/\/resize\/40$/, '/resize/120'));
+    const resized=url.href.includes('/melon/resize/') ? url.href.replace(/\/resize\/\d+$/, '/resize/120') : url.href+'/melon/resize/120';
+    const response = await melonFetch(resized);
     const mime = response.headers.get('content-type')?.split(';')[0];
     if (!['image/jpeg','image/png','image/webp'].includes(mime)) return '';
     const bytes = Buffer.from(await response.arrayBuffer());

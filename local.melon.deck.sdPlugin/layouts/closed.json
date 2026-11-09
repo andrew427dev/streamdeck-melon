@@ -1,0 +1,50 @@
+{
+  "id": "melon-closed",
+  "controller": "Encoder",
+  "items": [
+    {
+      "key": "logo",
+      "type": "pixmap",
+      "rect": [
+        81,
+        9,
+        38,
+        38
+      ]
+    },
+    {
+      "key": "launch",
+      "type": "text",
+      "rect": [
+        4,
+        50,
+        192,
+        25
+      ],
+      "font": {
+        "size": 18,
+        "weight": 650
+      },
+      "color": "#FFFFFF",
+      "alignment": "center",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "status",
+      "type": "text",
+      "rect": [
+        4,
+        74,
+        192,
+        21
+      ],
+      "font": {
+        "size": 15,
+        "weight": 500
+      },
+      "color": "#BBBBBB",
+      "alignment": "center",
+      "text-overflow": "ellipsis"
+    }
+  ]
+}

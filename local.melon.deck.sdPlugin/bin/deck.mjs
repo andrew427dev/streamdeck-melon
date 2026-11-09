@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {search, exactSong, coverFor, collection, playURL} from './catalog.mjs';
 
+import {dialStrip} from './strips.mjs';
 import {keyLine,keySVG,stripFeedback} from './faces.mjs';
 
 const execute=promisify(execFile);
@@ -35,6 +36,7 @@ const socket=new WebSocket('ws://127.0.0.1:'+Number(arg('-port')));
 const pluginID=arg('-pluginUUID');
 const actions=new Map();
 let state={}, globalSettings={}, ready=false, busy=Promise.resolve(), refreshing=false, deadlineBusy=false;
+let liveQueue=null, queueKey='', lastQueueRead=0, pendingQueue=null;
 let artKey='', art='', artAttempt=0;
 const labels={multimedia:'멀티미디어',queue:'재생 대기열',playback:'재생 제어',volume:'볼륨',shuffle:'셔플',repeat:'반복',like:'좋아요',add:'목록에 담기',collection:'컬렉션',search:'저장된 검색',sleep:'취침 타이머',now:'지금 재생 중'};
 const count=(n,min,max,defaultValue)=>Number.isFinite(Number(n)) ? Math.min(max,Math.max(min,Math.round(Number(n)))) : defaultValue;
@@ -121,7 +123,11 @@ function draw(c) {
   let event, payload;
   if (c.encoder) {
     event='setFeedback';
-    const layout=image?'layouts/artwork.json':'layouts/player.json';
+    const strip=dialStrip(c.kind,state,{
+      cover:image, item:c.item||liveQueue, browsing:c.browsing,
+      notice:c.notice?.until>Date.now()?c.notice.text:''
+    });
+    const layout=strip?'layouts/'+strip.layout+'.json':image?'layouts/artwork.json':'layouts/player.json';
     if (layout!==c.layout) {
       send('setFeedbackLayout',c.id,{layout});
       c.layout=layout;
@@ -133,7 +139,7 @@ function draw(c) {
       c.dialImageSent=true;
     }
     const showLevel = (c.kind==='volume' && state.volume!=null) || (isBrowse && Boolean(c.item));
-    payload=stripFeedback({title,value,hint,cover:image,level,showLevel});
+    payload=strip?.feedback??stripFeedback({title,value,hint,cover:image,level,showLevel});
   } else {
     event='setTitle';
     let symbol=c.kind;
@@ -192,10 +198,25 @@ function draw(c) {
 function drawAll(){for (const c of actions.values()) draw(c);}
 function updateArt() {
   const enabled=[...actions.values()].some(c=>['now','multimedia','playback'].includes(c.kind)&&c.settings.showArtwork!==false);
-  const key=enabled && state.title && state.artist ? JSON.stringify([state.title,state.artist]) : '';
+  const album=liveQueue?.album||'';
+  const key=enabled && state.title && state.artist ? JSON.stringify([state.title,state.artist,album]) : '';
   if (key===artKey && (!key || Date.now()-artAttempt<600000)) return;
   artKey=key;art='';artAttempt=Date.now();
-  if (key) coverFor(state).then(uri=>{if (key===artKey){art=uri;drawAll();}}).catch(()=>{});
+  if (key) coverFor({...state,album}).then(uri=>{if (key===artKey){art=uri;drawAll();}}).catch(()=>{});
+}
+function updateQueue() {
+  const enabled=state.running && [...actions.values()].some(c=>c.encoder && (c.kind==='queue' || (c.kind==='multimedia' && c.settings.showArtwork!==false)));
+  const key=enabled?JSON.stringify([state.title,state.artist]):'';
+  if (key!==queueKey) {
+    queueKey=key;liveQueue=null;lastQueueRead=0;
+    for (const c of actions.values()) if (c.kind==='queue') c.item=null;
+  }
+  if (!key || pendingQueue || Date.now()-lastQueueRead<10000) return;
+  lastQueueRead=Date.now();
+  pendingQueue=native('queuePreview',{currentIndex:liveQueue?.currentIndex})
+    .then(result=>{if (key===queueKey) liveQueue=result;})
+    .catch(()=>{if (key===queueKey) liveQueue=null;})
+    .finally(()=>{pendingQueue=null;updateArt();drawAll();});
 }
 async function refresh() {
   if (refreshing || !actions.size) return;
@@ -203,7 +224,14 @@ async function refresh() {
   try { state=await native('status'); }
   catch(e){state={error:textError(e)};}
   finally {refreshing=false;}
-  updateArt();drawAll();
+  if (state.running===false) {
+    for (const c of actions.values()) {
+      if (c.encoder && (c.kind==='multimedia' || c.kind==='queue')) {
+        c.browsing=false;c.item=null;c.notice=null;
+      }
+    }
+  }
+  updateQueue();updateArt();drawAll();
 }
 async function command(op,args) {
   if (state.running===false && op!=='pause') {
@@ -220,8 +248,10 @@ async function command(op,args) {
 async function browse(c,ticks,commit) {
   const queue=c.kind==='queue';
   if (queue) {
+    if (!c.item && c.encoder && liveQueue?.title) c.item=liveQueue;
     if (commit && c.item) {
       await command('queuePlay',c.item);
+      c.item=null;lastQueueRead=0;
       c.notice={text:'선택한 곡 재생',until:Date.now()+900};
     } else {
       if (!c.item) c.item=await command('queue');
@@ -254,6 +284,10 @@ async function browse(c,ticks,commit) {
 }
 async function act(c,input,ticks=0,pressed=false) {
   const s=c.settings;
+  if (c.encoder && (c.kind==='multimedia' || c.kind==='queue') && state.running===false) {
+    if (input!=='rotate') {await openApp();await refresh();}
+    return;
+  }
   if (c.kind==='multimedia' && input==='hold') {
     c.browsing=!c.browsing;c.item=null;c.entries=null;
     if (c.browsing) await browse(c,0,false);

@@ -1,0 +1,113 @@
+{
+  "id": "melon-transport",
+  "controller": "Encoder",
+  "items": [
+    {
+      "key": "cover",
+      "type": "pixmap",
+      "rect": [
+        7,
+        7,
+        43,
+        43
+      ]
+    },
+    {
+      "key": "song",
+      "type": "text",
+      "rect": [
+        56,
+        5,
+        140,
+        23
+      ],
+      "font": {
+        "size": 17,
+        "weight": 650
+      },
+      "color": "#FFFFFF",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "artist",
+      "type": "text",
+      "rect": [
+        56,
+        28,
+        140,
+        22
+      ],
+      "font": {
+        "size": 16,
+        "weight": 500
+      },
+      "color": "#C9C9C9",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "elapsed",
+      "type": "text",
+      "rect": [
+        5,
+        58,
+        49,
+        26
+      ],
+      "font": {
+        "size": 17,
+        "weight": 500
+      },
+      "color": "#FFFFFF",
+      "alignment": "left",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "modes",
+      "type": "pixmap",
+      "rect": [
+        54,
+        57,
+        92,
+        28
+      ]
+    },
+    {
+      "key": "duration",
+      "type": "text",
+      "rect": [
+        146,
+        58,
+        49,
+        26
+      ],
+      "font": {
+        "size": 17,
+        "weight": 500
+      },
+      "color": "#FFFFFF",
+      "alignment": "right",
+      "text-overflow": "ellipsis"
+    },
+    {
+      "key": "progress",
+      "type": "bar",
+      "rect": [
+        6,
+        91,
+        188,
+        4
+      ],
+      "value": 0,
+      "range": {
+        "min": 0,
+        "max": 100
+      },
+      "bar_fill_c": "#EEEEEE",
+      "bar_bg_c": "#393939",
+      "bar_border_c": "#393939",
+      "border_w": 0
+    }
+  ]
+}

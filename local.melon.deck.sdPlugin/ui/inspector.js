@@ -15,7 +15,7 @@ const fields={
 const options={multimedia:['rotate','step','double','triple','showArtwork','source','entries'],now:['showArtwork'],playback:['command'],volume:['step','direction'],search:['query'],add:['destination','list'],collection:['source','entries'],sleep:['minutes']};
 const tips={
  multimedia:'누르면 재생하거나 멈춥니다. 누른 채 돌리면 반대 동작을 합니다. 길게 눌러 등록한 컬렉션을 열거나 닫습니다.',
- queue:'처음 돌리면 멜론의 곡 목록을 엽니다. 돌려서 고른 뒤 누르거나 터치하면 그 곡부터 재생합니다.',
+ queue:'다음 곡을 표시합니다. 돌려서 고른 뒤 누르거나 터치하면 그 곡부터 재생합니다. 멜론이 꺼져 있으면 눌러 앱을 엽니다.',
  now:'앨범 커버를 켜면 곡명을 멜론에서 검색하고 제목과 가수가 일치하는 이미지를 표시합니다.',
  search:'버튼은 첫 곡을 재생합니다. 다이얼에서는 검색 결과를 돌려 고를 수 있습니다.',
  collection:'버튼은 첫 항목을 재생합니다. 다이얼에서는 등록 순서대로 돌려 고를 수 있습니다.',

@@ -5,7 +5,7 @@
   "Author": "Melon Deck",
   "Description": "Mac 멜론 플레이어의 재생, 볼륨, 재생목록을 Stream Deck +에서 조작합니다.",
   "UUID": "local.melon.deck",
-  "Version": "1.0.1.2",
+  "Version": "1.1.0.1",
   "Icon": "imgs/melon-plugin",
   "CategoryIcon": "imgs/melon-category",
   "CodePath": "bin/plugin.js",
