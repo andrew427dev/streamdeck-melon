@@ -13,6 +13,10 @@ Mac에서 실행 중인 멜론의 볼륨, 재생 상태, 재생목록을 Stream 
 
 세 번째 다이얼을 돌리면 멜론 볼륨이 기본 5%씩 바뀝니다. 한 번 눌러 재생하거나 멈추고, 두 번 눌러 다음 곡으로, 세 번 눌러 이전 곡으로 이동합니다. 네 번째 다이얼은 대기열을 탐색하며, 누르거나 터치해 선택한 곡을 재생합니다. [전체 조작법과 지원 범위](사용안내.md)
 
+## Hexaza Custom 통합 아이콘 팩
+
+멜론, Claude, Antigravity, Slack, ChatGPT, Discord 아이콘 여섯 개를 담았습니다. 설치 파일을 더블 클릭하면 Stream Deck 아이콘 라이브러리의 **Hexaza Custom**에서 선택하실 수 있습니다. [통합팩 바로 다운로드](https://github.com/andrew427dev/streamdeck-melon/releases/download/hexaza-custom-v1.0.0/local.hexaza.custom.streamDeckIconPack)
+
 ## 멜론 실행 아이콘
 
 ![Hexaza 배경의 멜론 실행 아이콘](local.melon.launcher.sdIconPack/icons/melon.png)

@@ -1,0 +1,8 @@
+{
+  "Name": "Hexaza Custom",
+  "Version": "1.0.0",
+  "Description": "멜론, Claude, Antigravity, Slack, ChatGPT, Discord 실행 아이콘",
+  "Author": "Local",
+  "Icon": "icon.png",
+  "License": "license.txt"
+}
