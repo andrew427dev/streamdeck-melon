@@ -49,25 +49,6 @@ export function albumFromListing(html,track) {
   return recordingsFromListing(html,track).find(row=>row.album===normalize(track.album))?.albumId || '';
 }
 
-const listings=new Map();
-export function queueRecordings(track) {
-  const key=JSON.stringify([track.title,track.artist]);
-  const cached=listings.get(key);
-  if (cached && cached.expires>Date.now()) return cached.job;
-  const url=new URL('https://www.melon.com/search/song/index.htm');
-  url.searchParams.set('q',track.title+' '+track.artist);
-  const job=melonFetch(url).then(r=>r.text()).then(html=>recordingsFromListing(html,track));
-  if (listings.size>=48) listings.delete(listings.keys().next().value);
-  listings.set(key,{job,expires:Date.now()+600000});
-  job.catch(()=>{if(listings.get(key)?.job===job) listings.delete(key);});
-  return job;
-}
-export function queueSongID(rows,album) {
-  const ids=new Set(rows.filter(row=>album && row.album===normalize(album)).map(row=>row.id));
-  if(ids.size!==1) throw Error('곡명·가수·앨범이 일치하는 곡 번호를 확인할 수 없습니다');
-  return [...ids][0];
-}
-
 async function albumCover(track) {
   if (!track.album) return '';
   const url=new URL('https://www.melon.com/search/song/index.htm');

@@ -170,11 +170,13 @@ struct Player {
             try press(items.first {name($0) == mapping[op]}, "재생할 곡을 확인해 주세요")
         }
     }
-    func volume(_ delta: Int) throws {
-        guard let slider = try parts().outer.first(where:{role($0) == "AXSlider"}),
-              let old = attribute(slider,"AXValue") as? NSNumber else { throw Problem("멜론 볼륨을 찾을 수 없습니다") }
-        let target = max(0,min(100,old.intValue + delta))
-        guard AXUIElementSetAttributeValue(slider,"AXValue" as CFString,NSNumber(value:target)) == .success else { throw Problem("볼륨을 조절할 수 없습니다") }
+    func volume(_ steps: Int) throws {
+        guard steps != 0 else { return }
+        let command = menu("재생").first { name($0) == (steps > 0 ? "볼륨 크게" : "볼륨 작게") }
+        // AXValue changes the slider drawing without updating Melon's audio engine.
+        for _ in 0..<min(10,abs(steps)) {
+            try press(command,"멜론 음량을 조절할 수 없습니다")
+        }
     }
     func queueTable() -> Element? {
         find(windows, depth: 9, skip: ["AXTable","AXOutline","AXWebArea","AXRow","AXColumn"]) { node,r in
@@ -287,13 +289,75 @@ struct Player {
             r=="AXMenu" && nodes(n).contains{string($0,"AXIdentifier")=="onClickLike:"}
         }
     }
+    func playInQueue(_ table: Element, rows: [Element], from start: Int, to target: Int) throws {
+        let transport = menu("재생")
+        let shuffleOff = transport.first { name($0) == "셔플 없음" }
+        let shuffleOn = transport.first { name($0) == "셔플" }
+        let wasShuffled = try state()["shuffle"] as? Bool == true
+        let restoreShuffle = start != target && wasShuffled
+        let wraps = transport.contains { name($0) == "전체 반복" && checked($0) }
+        var distance = target - start
+        if wraps && abs(distance) > rows.count / 2 {
+            distance += distance > 0 ? -rows.count : rows.count
+        }
+        let step = distance < 0 ? -1 : 1
+        let skip = transport.first { name($0) == (step > 0 ? "다음 곡 재생" : "이전 곡 재생") }
+        let inner = try parts().inner
+        func advance() throws {
+            var position = start
+            for _ in 0..<abs(distance) {
+                let next = (position + step + rows.count) % rows.count
+                let fresh = nodes(table,"AXRows")
+                guard fresh.count == rows.count, fresh[next] == rows[next], fresh[target] == rows[target] else {
+                    throw Problem("재생목록이 바뀌었습니다. 다시 선택해 주세요")
+                }
+                let expected = rowInfo(rows[next])
+                let previous = rowInfo(rows[position])
+                func reached() -> Bool? {
+                    if rowInfo(rows[next]).active { return true }
+                    let now = current(inner)
+                    guard !expected.title.isEmpty, now.title == expected.title, now.artist == expected.artist,
+                          previous.title != expected.title || previous.artist != expected.artist else { return nil }
+                    return true
+                }
+                try press(skip,"플레이리스트에서 곡을 이동할 수 없습니다")
+                if poll(reached) == nil {
+                    // Previous may first rewind the current song to its beginning.
+                    let status = try state()
+                    guard step < 0, status["title"] as? String == previous.title,
+                          status["artist"] as? String == previous.artist,
+                          let elapsed = status["elapsed"] as? Int, elapsed <= 2 else { throw Problem("목록에서 다음 재생 위치를 확인할 수 없습니다") }
+                    try press(skip,"이전 곡을 재생할 수 없습니다")
+                    guard poll(reached) != nil else { throw Problem("이전 곡을 확인할 수 없습니다") }
+                }
+                position = next
+            }
+            if try state()["playing"] as? Bool != true { try playback("play") }
+            guard poll({ (try? state()["playing"] as? Bool) == true ? true : nil }) == true else {
+                throw Problem("선택한 곡의 재생을 확인할 수 없습니다")
+            }
+        }
+        if restoreShuffle {
+            try press(shuffleOff,"셔플을 잠시 해제할 수 없습니다")
+            do {
+                guard poll({ (try? state()["shuffle"] as? Bool) == false ? true : nil }) == true else { throw Problem("셔플 상태를 확인할 수 없습니다") }
+                try advance()
+            } catch {
+                try press(shuffleOn,"멜론 셔플을 다시 켜 주세요")
+                throw error
+            }
+            try press(shuffleOn,"멜론 셔플을 다시 켜 주세요")
+        } else {
+            try advance()
+        }
+    }
     func queue(_ request: Record, _ op: String) throws -> Record {
         let table: Element
         if op == "queuePreview" {
             if let visibleTable = queueTable() { table = visibleTable }
             else if request["restoreOnLaunch"] as? Bool == true { table = try openQueue() }
             else { return [:] }
-        } else if ["queue","queuePlay","queueCheck"].contains(op), let visibleTable = queueTable() {
+        } else if ["queue","queuePlay"].contains(op), let visibleTable = queueTable() {
             table = visibleTable
         } else {
             table = try openQueue()
@@ -322,8 +386,9 @@ struct Player {
             guard let playing = try? currentIndex() else { return [:] }
             currentPosition = playing
             album = rowInfo(rows[playing]).album
-            guard playing + 1 < rows.count else { return ["end":true,"currentIndex":playing,"album":album ?? ""] }
-            index = playing + 1
+            if playing + 1 < rows.count { index = playing + 1 }
+            else if menu("재생").contains(where:{name($0) == "전체 반복" && checked($0)}) { index = 0 }
+            else { return ["end":true,"currentIndex":playing,"album":album ?? ""] }
         }
         else if op == "like" || op == "add" { index = try currentIndex() }
         else if let i = request["index"] as? Int { index = min(rows.count-1,max(0,i)) }
@@ -335,37 +400,10 @@ struct Player {
             info = rowInfo(row)
         }
         guard !info.title.isEmpty else { throw Problem("목록의 곡 정보를 읽을 수 없습니다") }
-        if op == "queuePlay" || op == "queueCheck" {
+        if op == "queuePlay" {
             guard request["title"] as? String == info.title, request["artist"] as? String == info.artist,
                   request["index"] as? Int == index else { throw Problem("목록이 바뀌었습니다. 다시 선택해 주세요") }
-            if op == "queueCheck" {
-                guard request["album"] as? String == info.album else { throw Problem("목록이 바뀌었습니다. 다시 선택해 주세요") }
-                return [:]
-            }
-            func matchesTarget(_ status: Record) -> Bool {
-                return status["title"] as? String == info.title && status["artist"] as? String == info.artist
-            }
-            // The player's Next command works even when the queue window is behind another app.
-            // Use it only when playback order and the displayed target row agree.
-            let hintedIndex = request["currentIndex"] as? Int
-            let couldBeNext = hintedIndex.map { $0 + 1 == index } ?? true
-            let before = couldBeNext ? try state() : [:]
-            let isNext = before["shuffle"] as? Bool == false && !matchesTarget(before) &&
-                (try? currentIndex()).map { $0 + 1 == index } == true
-            if isNext {
-                try playback("next")
-            } else {
-                return ["direct":true,"album":info.album]
-            }
-            func targetStatus() -> Record? {
-                guard let status = try? state(), matchesTarget(status) else { return nil }
-                return status
-            }
-            guard let selected = poll(targetStatus) else { throw Problem("선택한 곡의 재생을 확인할 수 없습니다") }
-            if selected["playing"] as? Bool == false { try playback("play") }
-            guard poll({ targetStatus()?["playing"] as? Bool == true ? true : nil }) == true else {
-                throw Problem("선택한 곡의 재생을 확인할 수 없습니다")
-            }
+            try playInQueue(table,rows:rows,from:try currentIndex(),to:index)
         }
         if op == "like" || op == "add" {
             try openTrackMenu(row,table:table)
@@ -421,22 +459,9 @@ func handle(_ r: Record) throws -> Record {
     AXUIElementSetMessagingTimeout(p.app,2.0)
     switch op {
     case "status":return try p.state()
-    case "volume":try p.volume(r["delta"] as? Int ?? 0)
+    case "volume":try p.volume(r["steps"] as? Int ?? 0)
     case "toggle","next","previous","play","pause","repeat","shuffle":try p.playback(op)
-    case "verifyPlayback":
-        guard let title = r["title"] as? String, let artist = r["artist"] as? String else { throw Problem("곡 정보가 없습니다") }
-        guard poll({
-            guard let state = try? p.state(), state["playing"] as? Bool == true else { return nil as Bool? }
-            if state["title"] as? String == title && state["artist"] as? String == artist { return true }
-            if let table = p.queueTable() {
-                for row in nodes(table,"AXVisibleRows") {
-                    let info = p.rowInfo(row)
-                    if info.active && info.title == title && info.artist == artist { return true }
-                }
-            }
-            return nil
-        }) == true else { throw Problem("선택한 곡의 재생을 확인할 수 없습니다") }
-    case "queue","queuePreview","queuePlay","queueCheck","like","add":return try p.queue(r,op)
+    case "queue","queuePreview","queuePlay","like","add":return try p.queue(r,op)
     default:throw Problem("알 수 없는 동작입니다")
     }
     return [:]

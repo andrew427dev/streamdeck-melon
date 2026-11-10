@@ -3,7 +3,7 @@ const fields={
  source:['컬렉션',[['auto','등록 목록 우선'],['favorites','다이얼 보관함'],['entries','등록한 목록']],'auto'],
  destination:['저장 위치',[['playlist','멜론 플레이리스트'],['favorites','다이얼 보관함 (저장 / 해제)']],'playlist'],
  rotate:['회전', [['volume','볼륨 조절'],['tracks','이전 / 다음 곡']],'volume'],
- step:['볼륨 간격 (%)','number',5,1,10],
+ volumeSteps:['한 칸당 볼륨',[['1','10%'],['2','20%'],['3','30%']],'1'],
  double:['두 번 누르기',[['next','다음 곡'],['previous','이전 곡'],['toggle','재생 / 일시정지']],'next'],
  triple:['세 번 누르기',[['previous','이전 곡'],['next','다음 곡'],['toggle','재생 / 일시정지']],'previous'],
  showArtwork:['앨범 커버','checkbox',true],
@@ -12,7 +12,7 @@ const fields={
  query:['검색어','text',''],list:['목록 이름','text',''],entries:['저장할 항목','textarea',''],
  minutes:['타이머 (분)','number',30,1,240]
 };
-const options={multimedia:['rotate','step','double','triple','showArtwork','source','entries'],now:['showArtwork'],playback:['command'],volume:['step','direction'],search:['query'],add:['destination','list'],collection:['source','entries'],sleep:['minutes']};
+const options={multimedia:['rotate','volumeSteps','double','triple','showArtwork','source','entries'],now:['showArtwork'],playback:['command'],volume:['volumeSteps','direction'],search:['query'],add:['destination','list'],collection:['source','entries'],sleep:['minutes']};
 const tips={
  multimedia:'누르면 재생하거나 멈춥니다. 누른 채 돌리면 반대 동작을 합니다. 길게 눌러 등록한 컬렉션을 열거나 닫습니다.',
  queue:'다음 곡을 표시합니다. 돌려서 고른 뒤 누르거나 터치하면 그 곡부터 재생합니다. 멜론이 꺼져 있으면 눌러 앱을 엽니다.',

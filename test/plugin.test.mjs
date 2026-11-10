@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as wait} from 'node:timers/promises';
 import {keyLine,keySVG,stripFeedback} from '../local.melon.deck.sdPlugin/bin/faces.mjs';
-import {albumFromListing,collection,playURL,queueSongID,recordingsFromListing} from '../local.melon.deck.sdPlugin/bin/catalog.mjs';
+import {albumFromListing,collection,playURL} from '../local.melon.deck.sdPlugin/bin/catalog.mjs';
 
 test('실행 및 종료 화면에서 같은 깊이의 요소가 서로 겹치지 않습니다',async()=>{
  for(const layout of ['launch','queue','transport']){
@@ -37,10 +37,6 @@ test('동명곡의 커버는 가수와 앨범이 일치하는 행에서만 선�
  <td><a href="javascript:melon.link.goArtistDetail('5');">Singer</a></td>
  <td><a href="javascript:melon.link.goAlbumDetail('120');">Record</a></td></tr>`;
  const track={title:'Song One',artist:'Singer',album:'Record'};
- const matches=recordingsFromListing(listing,track);
- assert.equal(queueSongID(matches,track.album),'12');
- assert.throws(()=>queueSongID(matches,'Other'));
- assert.throws(()=>queueSongID([...matches,{...matches[0],id:'13'}],track.album));
  assert.equal(albumFromListing(listing,track),'120');
  assert.equal(albumFromListing(listing,{...track,album:'Other'}),'');
  assert.equal(albumFromListing(listing,{...track,artist:'Other'}),'');
@@ -74,18 +70,19 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
   fs.appendFileSync(process.env.MELON_TEST_EVENTS,JSON.stringify(r)+'\\n');
   const songs=Array.from({length:10},(_,index)=>({index,title:index===2?'대기 곡':index===5?'테스트':'곡 '+index,artist:index===2?'다음 가수':'가수'}));
   if(r.op==='queue') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,180);
-  const data=r.op==='status' && fs.existsSync(process.env.MELON_TEST_EVENTS+'.closed')?{running:false}:r.op==='status'?{elapsed:93,duration:300,running:true,playing:true,volume:50,title:'오래 기억하고 싶은 노래',artist:'긴 이름의 아티스트'}:r.op==='queuePreview'?{index:2,title:'대기 곡',artist:'다음 가수',count:10,nextTitle:'다다음 곡',nearby:songs.slice(0,8)}:r.op==='queue'?{...songs[r.index??2],count:10,nearby:songs}:r.op==='queuePlay'?{direct:true,album:'앨범'}:{};
+  let data=r.op==='status' && fs.existsSync(process.env.MELON_TEST_EVENTS+'.closed')?{running:false}:r.op==='status'?{elapsed:93,duration:300,running:true,playing:true,volume:50,title:'오래 기억하고 싶은 노래',artist:'긴 이름의 아티스트'}:r.op==='queuePreview'?{index:2,title:'대기 곡',artist:'다음 가수',count:10,nextTitle:'다다음 곡',nearby:songs.slice(0,8)}:r.op==='queue'?{...songs[r.index??2],count:10,nearby:songs}:{};
+  const cursor=process.env.MELON_TEST_EVENTS+'.position';
+  if(fs.existsSync(cursor)){
+    if(r.op==='queuePlay') fs.writeFileSync(cursor,String(r.index));
+    const at=Number(fs.readFileSync(cursor,'utf8'));
+    if(r.op==='status') data={...data,...songs[at]};
+    if(r.op==='queuePreview') data={...songs[at+1],count:songs.length,currentIndex:at,nextTitle:songs[at+2]?.title,nearby:songs};
+  }
   process.stdout.write(JSON.stringify({ok:true,data}));`,{mode:0o644});
  // Mock only the device transport. The plugin uses its real registration, dispatcher and helper path.
  await writeFile(join(temp,'transport.cjs'),`
   const fs=require('node:fs'),cp=require('node:child_process');
-  global.fetch=async url=>{
-    const q=new URL(url).searchParams.get('q')||'';
-    const title=q==='테스트 가수'?'테스트':'곡 8';
-    const id=title==='테스트'?125:128;
-    const row='<tr><a href="javascript:melon.play.playSong(\\'x\\','+id+');">'+title+'</a><a href="javascript:melon.link.goArtistDetail(\\'1\\');">가수</a><a href="javascript:melon.link.goAlbumDetail(\\'2\\');">앨범</a></tr>';
-    return {ok:true,text:async()=>row,json:async()=>({STATUS:'0',SONGCONTENTS:[]})};
-  };
+  global.fetch=async()=>({ok:true,text:async()=>'',json:async()=>({STATUS:'0',SONGCONTENTS:[]})});
   const exec=cp.execFile;
   cp.execFile=(file,args,options,callback)=>{
     if(file!=='/usr/bin/open') return exec(file,args,options,callback);
@@ -118,7 +115,7 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
    m.payload.title===keyLine('오래 기억하고 싶은 노래')+'\n'+keyLine('긴 이름의 아티스트')));
  assert.ok(messages.some(m=>m.event==='setFeedbackLayout' && m.context==='dial' && m.payload.layout==='layouts/transport.json'));
  send('dialRotate','dial',{pressed:false,ticks:2});
- await until(async()=>(await ops()).some(x=>x.op==='volume'&&x.delta===10));
+ await until(async()=>(await ops()).some(x=>x.op==='volume'&&x.steps===2));
  send('dialDown','dial');send('dialRotate','dial',{pressed:true,ticks:-1});send('dialUp','dial');
  await until(async()=>(await ops()).some(x=>x.op==='previous'));
  for(let i=0;i<2;i++){send('dialDown','dial');send('dialUp','dial');}
@@ -158,11 +155,7 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  send('dialRotate','q',{ticks:1},'queue');
  await until(async()=>(await ops()).some(x=>x.op==='queuePlay' && x.index===8 && x.title==='곡 8'));
  assert.equal((await ops()).filter(x=>x.op==='queue').length,readsBefore+1);
- await until(async()=>(await ops()).filter(x=>x.op==='verifyPlayback').length===2);
- const commands=await ops();
- assert.deepEqual(commands.filter(x=>x.op==='queueCheck').map(x=>x.album),['앨범','앨범']);
- assert.deepEqual(commands.filter(x=>x.op==='launch').map(x=>x.args),['125','128'].map(id=>
-   ['-g','-b','com.iloen.macmelon',playURL({id,type:'song'})]));
+ assert.equal((await ops()).some(x=>x.op==='launch'),false,'기존 플레이리스트에서 이동할 때 개별 곡 주소를 열지 않습니다');
  send('willAppear','timer',{controller:'Keypad',settings:{minutes:1}},'sleep');
  send('keyDown','timer',{},'sleep');
  await until(()=>messages.some(m=>m.event==='setGlobalSettings'&&m.payload.deadline>Date.now()));
@@ -185,4 +178,14 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
    const launched=(await ops()).slice(countBefore).filter(x=>x.op!=='queuePreview');
    assert.deepEqual(launched,[{op:'launch',args:['-b','com.iloen.macmelon']}]);
  }
+ await writeFile(log+'.position','2');
+ await until(()=>messages.some(m=>m.context==='q' && m.payload?.song==='▸ 곡 3'));
+ const beforeSelection=(await ops()).length;
+ send('dialRotate','q',{ticks:2},'queue');
+ send('touchTap','q',{},'queue');
+ await until(()=>messages.some(m=>m.context==='q' && m.payload?.song==='▸ 곡 6' && m.payload.following==='↳ 곡 7'));
+ const selection=(await ops()).slice(beforeSelection);
+ assert.ok(selection.some(x=>x.op==='queuePlay' && x.index===5));
+ assert.ok(!selection.some(x=>x.op==='launch'));
+
 });

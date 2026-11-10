@@ -2,7 +2,7 @@ import {execFile,spawn} from 'node:child_process';
 import {chmodSync,statSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {search, exactSong, queueRecordings, queueSongID, coverFor, collection, playURL} from './catalog.mjs';
+import {search, exactSong, coverFor, collection, playURL} from './catalog.mjs';
 
 import {dialStrip} from './strips.mjs';
 import {keyLine,keySVG,stripFeedback} from './faces.mjs';
@@ -15,7 +15,8 @@ if (!(bridgeMode & 0o100)) chmodSync(bridge,(bridgeMode & 0o777)|0o100);
 function native(op, args={}) {
   return new Promise((resolve,reject)=>{
     const child=spawn(bridge,[],{stdio:['pipe','pipe','ignore']});
-    const timeout=setTimeout(()=>child.kill('SIGKILL'),12000);
+    const timeoutMs=op==='queuePlay' ? 12000+3000*count(args.count,1,10000,250) : 12000;
+    const timeout=setTimeout(()=>child.kill('SIGKILL'),timeoutMs);
     let out='';
     child.stdout.setEncoding('utf8').on('data',part=>out+=part);
     child.stdin.on('error',()=>{});
@@ -276,8 +277,6 @@ function turnQueue(c,ticks) {
       selected={...await native('queue',{index,includeNearby:true}),readAt:Date.now()};
     }
     if (queueKey!==key || actions.get(c.id)!==c) return;
-    clearTimeout(c.lookupTimer);
-    c.lookupTimer=setTimeout(()=>void queueRecordings(selected).catch(()=>{}),120);
     c.item=selected;
     c.notice=null;
     draw(c);
@@ -289,16 +288,9 @@ async function browse(c,ticks,commit) {
     if (!c.item && c.encoder && liveQueue?.title) c.item=liveQueue;
     if (commit && c.item) {
       const {index,title,artist}=c.item;
-      const target={index,title,artist};
-      const result=await native('queuePlay',{...target,currentIndex:liveQueue?.currentIndex});
-      if (result.direct) {
-        const id=queueSongID(await queueRecordings(target),result.album);
-        await native('queueCheck',{...target,album:result.album});
-        await openApp(playURL({id,type:'song'}));
-        await native('verifyPlayback',target);
-      }
-      await refresh();
+      await native('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex,count:c.item.count});
       c.item=null;lastQueueRead=0;
+      await refresh();
       c.notice={text:'선택한 곡 재생',until:Date.now()+900};
     } else if (!c.item) {
       c.item=await command('queue');
@@ -351,10 +343,10 @@ async function act(c,input,ticks=0,pressed=false) {
     drawAll();return;
   }
   if (input==='rotate') {
-    const step=count(s.step,1,10,5);
+    const step=count(s.volumeSteps,1,3,1);
     const volume=c.kind==='volume' || (((s.rotate||'volume')==='volume')!==pressed);
     if (volume) {
-      await command('volume',{delta:ticks*step});
+      await command('volume',{steps:ticks*step});
       if (state.volume!=null) c.notice={text:'볼륨 '+Math.round(state.volume)+'%',until:Date.now()+950};
     } else {
       for (let i=0;i<Math.min(Math.abs(ticks),12);i++) await native(ticks>0?'next':'previous');
@@ -366,7 +358,7 @@ async function act(c,input,ticks=0,pressed=false) {
   } else if (c.kind==='playback') await command(s.command||'toggle');
   else if (c.kind==='volume') {
     if (c.encoder) await command('toggle');
-    else await command('volume',{delta:count(s.step,1,10,5)*(Number(s.direction||1)<0?-1:1)});
+    else await command('volume',{steps:count(s.volumeSteps,1,3,1)*(Number(s.direction||1)<0?-1:1)});
   } else if (c.kind==='add') await command('add',{list:String(s.list||'')});
   else if (['repeat','shuffle','like'].includes(c.kind)) await command(c.kind);
   draw(c);
@@ -397,7 +389,7 @@ socket.addEventListener('message',({data})=>{
   let c=actions.get(context);
   if (event==='didReceiveGlobalSettings') {globalSettings=payload.settings||{};ready=true;drawAll();return;}
   if (event==='willDisappear' || event==='willAppear') {
-    if (c){clearTimeout(c.clickTimer);clearTimeout(c.turnTimer);clearTimeout(c.lookupTimer);actions.delete(context);}
+    if (c){clearTimeout(c.clickTimer);clearTimeout(c.turnTimer);actions.delete(context);}
     if (event==='willDisappear') return;
     c={id:context,kind:action.split('.').pop(),settings:payload.settings||{},encoder:payload.controller==='Encoder',clicks:0};
     actions.set(context,c);draw(c);void refresh();return;
