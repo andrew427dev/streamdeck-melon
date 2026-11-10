@@ -230,45 +230,6 @@ struct Player {
         guard !visible.isNull, visible.width > 4, visible.height > 3 else { throw Problem("멜론 목록에서 곡이 보이도록 스크롤해 주세요") }
         return CGPoint(x:visible.midX,y:visible.midY)
     }
-    func playRowInBackground(_ row: Element, table: Element) throws {
-        try reveal(row,table:table)
-        var actions: CFArray?
-        if AXUIElementCopyActionNames(row,&actions) == .success,
-           (actions as? [String])?.contains("AXOpen") == true,
-           AXUIElementPerformAction(row,"AXOpen" as CFString) == .success { return }
-
-        guard let window = element(table,"AXWindow"), let frame = rect(window),
-              let pt = poll({ try? point(row,table:table) }) else { throw Problem("선택한 곡의 위치를 확인할 수 없습니다") }
-
-        // Resolve the AX window against Melon's own windows, including other Spaces.
-        // An ambiguous match must never send input to another window.
-        let windows = CGWindowListCopyWindowInfo(.optionAll,kCGNullWindowID) as? [Record] ?? []
-        let matches = windows.compactMap { entry -> Int? in
-            guard entry[kCGWindowOwnerPID as String] as? pid_t == process.processIdentifier,
-                  entry[kCGWindowLayer as String] as? Int == 0,
-                  let bounds = entry[kCGWindowBounds as String] as? NSDictionary,
-                  let area = CGRect(dictionaryRepresentation:bounds),
-                  abs(area.minX-frame.minX)<1, abs(area.minY-frame.minY)<1,
-                  abs(area.width-frame.width)<1, abs(area.height-frame.height)<1 else { return nil }
-            return entry[kCGWindowNumber as String] as? Int
-        }
-        guard matches.count == 1, let number = matches.first else { throw Problem("멜론 재생목록 창을 식별할 수 없습니다") }
-        let local = CGPoint(x:pt.x-frame.minX,y:frame.maxY-pt.y)
-        for count in 1...2 {
-            for type in [NSEvent.EventType.leftMouseDown,.leftMouseUp] {
-                guard let event = NSEvent.mouseEvent(with:type,location:local,modifierFlags:[],
-                    timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:number,context:nil,
-                    eventNumber:count,clickCount:count,pressure:type == .leftMouseDown ? 1 : 0)?.cgEvent else {
-                    throw Problem("곡 재생 입력을 만들 수 없습니다")
-                }
-                event.location = pt
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointer,value:Int64(number))
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent,value:Int64(number))
-                event.postToPid(process.processIdentifier)
-                Thread.sleep(forTimeInterval:0.015)
-            }
-        }
-    }
     func openTrackMenu(_ row: Element, table: Element) throws {
         // Melon implements these actions on table mouse events. Confirm the visible
         // accessibility row under the pointer before dispatching each click.
@@ -332,7 +293,7 @@ struct Player {
             if let visibleTable = queueTable() { table = visibleTable }
             else if request["restoreOnLaunch"] as? Bool == true { table = try openQueue() }
             else { return [:] }
-        } else if ["queue","queuePlay"].contains(op), let visibleTable = queueTable() {
+        } else if ["queue","queuePlay","queueCheck"].contains(op), let visibleTable = queueTable() {
             table = visibleTable
         } else {
             table = try openQueue()
@@ -374,9 +335,13 @@ struct Player {
             info = rowInfo(row)
         }
         guard !info.title.isEmpty else { throw Problem("목록의 곡 정보를 읽을 수 없습니다") }
-        if op == "queuePlay" {
+        if op == "queuePlay" || op == "queueCheck" {
             guard request["title"] as? String == info.title, request["artist"] as? String == info.artist,
                   request["index"] as? Int == index else { throw Problem("목록이 바뀌었습니다. 다시 선택해 주세요") }
+            if op == "queueCheck" {
+                guard request["album"] as? String == info.album else { throw Problem("목록이 바뀌었습니다. 다시 선택해 주세요") }
+                return [:]
+            }
             func matchesTarget(_ status: Record) -> Bool {
                 return status["title"] as? String == info.title && status["artist"] as? String == info.artist
             }
@@ -390,7 +355,7 @@ struct Player {
             if isNext {
                 try playback("next")
             } else {
-                try playRowInBackground(row,table:table)
+                return ["direct":true,"album":info.album]
             }
             func targetStatus() -> Record? {
                 guard let status = try? state(), matchesTarget(status) else { return nil }
@@ -458,7 +423,20 @@ func handle(_ r: Record) throws -> Record {
     case "status":return try p.state()
     case "volume":try p.volume(r["delta"] as? Int ?? 0)
     case "toggle","next","previous","play","pause","repeat","shuffle":try p.playback(op)
-    case "queue","queuePreview","queuePlay","like","add":return try p.queue(r,op)
+    case "verifyPlayback":
+        guard let title = r["title"] as? String, let artist = r["artist"] as? String else { throw Problem("곡 정보가 없습니다") }
+        guard poll({
+            guard let state = try? p.state(), state["playing"] as? Bool == true else { return nil as Bool? }
+            if state["title"] as? String == title && state["artist"] as? String == artist { return true }
+            if let table = p.queueTable() {
+                for row in nodes(table,"AXVisibleRows") {
+                    let info = p.rowInfo(row)
+                    if info.active && info.title == title && info.artist == artist { return true }
+                }
+            }
+            return nil
+        }) == true else { throw Problem("선택한 곡의 재생을 확인할 수 없습니다") }
+    case "queue","queuePreview","queuePlay","queueCheck","like","add":return try p.queue(r,op)
     default:throw Problem("알 수 없는 동작입니다")
     }
     return [:]

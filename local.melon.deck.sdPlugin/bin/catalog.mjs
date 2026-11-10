@@ -32,16 +32,40 @@ export async function exactSong(title,artist) {
 }
 
 // The autocomplete endpoint only returns the first few tracks; the full listing also identifies the album.
-export function albumFromListing(html,track) {
+export function recordingsFromListing(html,track) {
   const label = html => normalize(text(html.replace(/<[^>]*>/g,'')).replaceAll('&nbsp;',' '));
+  const matches=[];
   for (const row of html.split(/<tr\b/i)) {
-    const song = row.match(/<a\b[^>]*melon\.play\.playSong\([^>]*>([\s\S]*?)<\/a>/i);
+    const song = [...row.matchAll(/<a\b[^>]*melon\.play\.playSong\(\s*'[^']*'\s*,\s*'?(\d+)'?\s*\)[^>]*>([\s\S]*?)<\/a>/gi)]
+      .find(match=>label(match[2])===normalize(track.title));
     const album = row.match(/<a\b[^>]*melon\.link\.goAlbumDetail\('(\d+)'\)[^>]*>([\s\S]*?)<\/a>/i);
-    if (!song || !album || label(song[1])!==normalize(track.title) || label(album[2])!==normalize(track.album)) continue;
+    if (!song || !album) continue;
     const artists=[...row.matchAll(/<a\b[^>]*melon\.link\.goArtistDetail\([^>]*>([\s\S]*?)<\/a>/gi)].map(match=>label(match[1]));
-    if ([...new Set(artists)].join(', ')===normalize(track.artist)) return album[1];
+    if ([...new Set(artists)].join(', ')===normalize(track.artist)) matches.push({id:song[1],album:label(album[2]),albumId:album[1]});
   }
-  return '';
+  return matches;
+}
+export function albumFromListing(html,track) {
+  return recordingsFromListing(html,track).find(row=>row.album===normalize(track.album))?.albumId || '';
+}
+
+const listings=new Map();
+export function queueRecordings(track) {
+  const key=JSON.stringify([track.title,track.artist]);
+  const cached=listings.get(key);
+  if (cached && cached.expires>Date.now()) return cached.job;
+  const url=new URL('https://www.melon.com/search/song/index.htm');
+  url.searchParams.set('q',track.title+' '+track.artist);
+  const job=melonFetch(url).then(r=>r.text()).then(html=>recordingsFromListing(html,track));
+  if (listings.size>=48) listings.delete(listings.keys().next().value);
+  listings.set(key,{job,expires:Date.now()+600000});
+  job.catch(()=>{if(listings.get(key)?.job===job) listings.delete(key);});
+  return job;
+}
+export function queueSongID(rows,album) {
+  const ids=new Set(rows.filter(row=>album && row.album===normalize(album)).map(row=>row.id));
+  if(ids.size!==1) throw Error('곡명·가수·앨범이 일치하는 곡 번호를 확인할 수 없습니다');
+  return [...ids][0];
 }
 
 async function albumCover(track) {

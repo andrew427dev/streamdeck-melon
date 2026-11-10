@@ -2,7 +2,7 @@ import {execFile,spawn} from 'node:child_process';
 import {chmodSync,statSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {search, exactSong, coverFor, collection, playURL} from './catalog.mjs';
+import {search, exactSong, queueRecordings, queueSongID, coverFor, collection, playURL} from './catalog.mjs';
 
 import {dialStrip} from './strips.mjs';
 import {keyLine,keySVG,stripFeedback} from './faces.mjs';
@@ -57,6 +57,7 @@ function serialize(c,job) {
     try {await job();}
     catch(error) {
       if (c) {
+        if (c.kind === 'queue') send('logMessage',pluginID,{message:'Melon queue: '+textError(error)});
         c.notice={text:textError(error),until:Date.now()+4500};
         send('showAlert',c.id,{});
         draw(c);
@@ -275,6 +276,8 @@ function turnQueue(c,ticks) {
       selected={...await native('queue',{index,includeNearby:true}),readAt:Date.now()};
     }
     if (queueKey!==key || actions.get(c.id)!==c) return;
+    clearTimeout(c.lookupTimer);
+    c.lookupTimer=setTimeout(()=>void queueRecordings(selected).catch(()=>{}),120);
     c.item=selected;
     c.notice=null;
     draw(c);
@@ -286,7 +289,14 @@ async function browse(c,ticks,commit) {
     if (!c.item && c.encoder && liveQueue?.title) c.item=liveQueue;
     if (commit && c.item) {
       const {index,title,artist}=c.item;
-      await native('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex});
+      const target={index,title,artist};
+      const result=await native('queuePlay',{...target,currentIndex:liveQueue?.currentIndex});
+      if (result.direct) {
+        const id=queueSongID(await queueRecordings(target),result.album);
+        await native('queueCheck',{...target,album:result.album});
+        await openApp(playURL({id,type:'song'}));
+        await native('verifyPlayback',target);
+      }
       await refresh();
       c.item=null;lastQueueRead=0;
       c.notice={text:'선택한 곡 재생',until:Date.now()+900};
@@ -387,7 +397,7 @@ socket.addEventListener('message',({data})=>{
   let c=actions.get(context);
   if (event==='didReceiveGlobalSettings') {globalSettings=payload.settings||{};ready=true;drawAll();return;}
   if (event==='willDisappear' || event==='willAppear') {
-    if (c){clearTimeout(c.clickTimer);clearTimeout(c.turnTimer);actions.delete(context);}
+    if (c){clearTimeout(c.clickTimer);clearTimeout(c.turnTimer);clearTimeout(c.lookupTimer);actions.delete(context);}
     if (event==='willDisappear') return;
     c={id:context,kind:action.split('.').pop(),settings:payload.settings||{},encoder:payload.controller==='Encoder',clicks:0};
     actions.set(context,c);draw(c);void refresh();return;
