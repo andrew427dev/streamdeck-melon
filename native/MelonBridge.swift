@@ -286,6 +286,8 @@ struct Player {
             if let visibleTable = queueTable() { table = visibleTable }
             else if request["restoreOnLaunch"] as? Bool == true { table = try openQueue() }
             else { return [:] }
+        } else if op == "queue", let visibleTable = queueTable() {
+            table = visibleTable
         } else {
             table = try openQueue()
         }
@@ -374,6 +376,23 @@ struct Player {
         result["currentIndex"] = currentPosition
         result["album"] = album
         if index + 1 < rows.count { result["nextTitle"] = rowInfo(rows[index + 1]).title }
+        if request["includeNearby"] as? Bool == true {
+            // Read a bounded neighborhood without selecting rows or scrolling the player's window.
+            let range = max(0,index-8)...min(rows.count-1,index+9)
+            result["nearby"] = range.compactMap { position -> Record? in
+                if position == index {
+                    return ["index":position,"title":info.title,"artist":info.artist]
+                }
+                let labels = nodes(rows[position]).lazy.compactMap { cell -> String? in
+                    guard let label = nodes(cell).first(where: { role($0) == "AXStaticText" }) else { return nil }
+                    let text = name(label)
+                    return text.isEmpty ? nil : text
+                }
+                let track = Array(labels.prefix(2))
+                guard track.count == 2 else { return nil }
+                return ["index":position,"title":track[0],"artist":track[1]]
+            }
+        }
         return result
     }
 }

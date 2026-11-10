@@ -68,7 +68,9 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  await writeFile(join(runtime,'MelonBridge'),'#!/usr/bin/env node\n'+`
   const fs=require('node:fs'); const r=JSON.parse(fs.readFileSync(0,'utf8'));
   fs.appendFileSync(process.env.MELON_TEST_EVENTS,JSON.stringify(r)+'\\n');
-  const data=r.op==='status' && fs.existsSync(process.env.MELON_TEST_EVENTS+'.closed')?{running:false}:r.op==='status'?{elapsed:93,duration:300,running:true,playing:true,volume:50,title:'오래 기억하고 싶은 노래',artist:'긴 이름의 아티스트'}:r.op==='queuePreview'?{index:2,title:'대기 곡',artist:'다음 가수',count:10,nextTitle:'다다음 곡'}:r.op==='queue'?{index:r.index??2,title:'테스트',artist:'가수',count:10}:{};
+  const songs=Array.from({length:10},(_,index)=>({index,title:index===2?'대기 곡':index===5?'테스트':'곡 '+index,artist:index===2?'다음 가수':'가수'}));
+  if(r.op==='queue') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,180);
+  const data=r.op==='status' && fs.existsSync(process.env.MELON_TEST_EVENTS+'.closed')?{running:false}:r.op==='status'?{elapsed:93,duration:300,running:true,playing:true,volume:50,title:'오래 기억하고 싶은 노래',artist:'긴 이름의 아티스트'}:r.op==='queuePreview'?{index:2,title:'대기 곡',artist:'다음 가수',count:10,nextTitle:'다다음 곡',nearby:songs.slice(0,8)}:r.op==='queue'?{...songs[r.index??2],count:10,nearby:songs}:{};
   process.stdout.write(JSON.stringify({ok:true,data}));`,{mode:0o644});
  // Mock only the device transport. The plugin uses its real registration, dispatcher and helper path.
  await writeFile(join(temp,'transport.cjs'),`
@@ -118,10 +120,32 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  await until(()=>messages.some(m=>m.context==='q' && m.payload?.song==='▸ 대기 곡' && m.payload.following==='↳ 다다음 곡'));
  send('touchTap','q',{tapPos:[100,50],hold:false},'queue');
  await until(async()=>(await ops()).some(x=>x.op==='queuePlay' && x.index===2 && x.title==='대기 곡' && x.artist==='다음 가수'));
+ const readsBefore=(await ops()).filter(x=>x.op==='queue').length;
+ const start=performance.now();
+ const feedback=new Promise(resolve=>{
+   function onSong(m){
+     if(m.context==='q' && m.payload?.song==='▸ 테스트'){
+       child.off('message',onSong);
+       resolve(performance.now()-start);
+     }
+   }
+   child.on('message',onSong);
+ });
  send('dialRotate','q',{ticks:3},'queue');
  await until(()=>messages.some(m=>m.context==='q'&&m.payload?.song==='▸ 테스트'));
+ t.diagnostic('회전 입력 → 곡명 표시 '+(await feedback).toFixed(1)+' ms (목록 조회 지연 180 ms)');
+ assert.equal((await ops()).filter(x=>x.op==='queue').length,readsBefore,'주변 곡을 표시할 때 멜론 재조회');
  send('touchTap','q',{},'queue');
  await until(async()=>(await ops()).some(x=>x.op==='queuePlay'&&x.index===5&&x.title==='테스트'));
+ // Cross the prefetched boundary and reverse direction while Melon is still answering.
+ send('dialRotate','q',{ticks:50},'queue');
+ await until(async()=>(await ops()).some(x=>x.op==='queue' && x.index===9));
+ send('dialRotate','q',{ticks:1},'queue');
+ send('dialRotate','q',{ticks:-1},'queue');
+ send('touchTap','q',{},'queue');
+ send('dialRotate','q',{ticks:1},'queue');
+ await until(async()=>(await ops()).some(x=>x.op==='queuePlay' && x.index===8 && x.title==='곡 8'));
+ assert.equal((await ops()).filter(x=>x.op==='queue').length,readsBefore+1);
  send('willAppear','timer',{controller:'Keypad',settings:{minutes:1}},'sleep');
  send('keyDown','timer',{},'sleep');
  await until(()=>messages.some(m=>m.event==='setGlobalSettings'&&m.payload.deadline>Date.now()));

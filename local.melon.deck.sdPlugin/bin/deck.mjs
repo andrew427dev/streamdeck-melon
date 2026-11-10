@@ -214,10 +214,11 @@ function updateQueue() {
   }
   if (!key || pendingQueue || Date.now()-lastQueueRead<10000) return;
   lastQueueRead=Date.now();
-  const restoreOnLaunch=restoreQueueOnLaunch && Boolean(state.title) && [...actions.values()].some(c=>c.encoder && c.kind==='queue');
+  const includeNearby=[...actions.values()].some(c=>c.encoder && c.kind==='queue');
+  const restoreOnLaunch=restoreQueueOnLaunch && Boolean(state.title) && includeNearby;
   if (restoreOnLaunch) restoreQueueOnLaunch=false;
-  pendingQueue=native('queuePreview',{currentIndex:liveQueue?.currentIndex,restoreOnLaunch})
-    .then(result=>{if (key===queueKey) liveQueue=result;})
+  pendingQueue=native('queuePreview',{currentIndex:liveQueue?.currentIndex,restoreOnLaunch,includeNearby})
+    .then(result=>{if (key===queueKey) liveQueue={...result,readAt:Date.now()};})
     .catch(()=>{if (key===queueKey) liveQueue=null;})
     .finally(()=>{pendingQueue=null;updateArt();drawAll();});
 }
@@ -249,17 +250,47 @@ async function command(op,args) {
   await refresh();
   return result;
 }
+// Keep rotation and taps in input order. While a lookup is running, the next
+// batch resolves just its final row, preserving reversals at either end.
+function turnQueue(c,ticks) {
+  if (!ticks || state.running===false) return;
+  if (c.queueTurns) {c.queueTurns.push(ticks);return;}
+  const turns=[ticks];
+  c.queueTurns=turns;
+  const key=queueKey;
+  serialize(c,async()=>{
+    if (c.queueTurns===turns) c.queueTurns=null;
+    if (state.running===false || queueKey!==key) return;
+    let base=c.item || liveQueue;
+    if (!base?.title) base={...await native('queue',{includeNearby:true}),readAt:Date.now()};
+    const index=turns.reduce((at,step)=>move(at,step,base.count),base.index);
+    const page=[liveQueue,base].filter(p=>p?.count===base.count && Date.now()-p.readAt<10000)
+      .sort((a,b)=>b.readAt-a.readAt).find(p=>p.nearby?.some(song=>song.index===index));
+    let selected;
+    if (page) {
+      const song=page.nearby.find(row=>row.index===index);
+      const next=page.nearby.find(row=>row.index===index+1);
+      selected={...song,count:page.count,nextTitle:next?.title,nearby:page.nearby,readAt:page.readAt};
+    } else {
+      selected={...await native('queue',{index,includeNearby:true}),readAt:Date.now()};
+    }
+    if (queueKey!==key || actions.get(c.id)!==c) return;
+    c.item=selected;
+    c.notice=null;
+    draw(c);
+  });
+}
 async function browse(c,ticks,commit) {
   const queue=c.kind==='queue';
   if (queue) {
     if (!c.item && c.encoder && liveQueue?.title) c.item=liveQueue;
     if (commit && c.item) {
-      await command('queuePlay',c.item);
+      const {index,title,artist}=c.item;
+      await command('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex});
       c.item=null;lastQueueRead=0;
       c.notice={text:'선택한 곡 재생',until:Date.now()+900};
-    } else {
-      if (!c.item) c.item=await command('queue');
-      if (ticks) c.item=await command('queue',{index:move(c.item.index,ticks,c.item.count)});
+    } else if (!c.item) {
+      c.item=await command('queue');
     }
   } else {
     if (!c.entries || (c.kind==='search' && Date.now()-c.loaded>60000)) {
@@ -380,12 +411,14 @@ socket.addEventListener('message',({data})=>{
   if (event==='dialRotate') {
     const pressed=!!payload.pressed;
     if (pressed) c.turnedWhileDown=true;
+    if (c.encoder && c.kind==='queue') {turnQueue(c,Number(payload.ticks)||0);return;}
     if (c.turn && c.turn.pressed!==pressed) flushRotation(c);
     c.turn={ticks:(c.turn?.ticks||0)+(Number(payload.ticks)||0),pressed};
     clearTimeout(c.turnTimer);c.turnTimer=setTimeout(()=>flushRotation(c),55);return;
   }
   if (event==='dialDown'){c.turnedWhileDown=false;c.downAt=Date.now();return;}
   if (event==='dialUp' || event==='touchTap' || event==='keyDown') {
+    c.queueTurns=null; // Subsequent rotations belong after this input.
     flushRotation(c);
     if (event==='dialUp' && c.turnedWhileDown) {c.turnedWhileDown=false;return;}
     const hold=(event==='touchTap'&&payload.hold)||(event==='dialUp'&&c.downAt&&Date.now()-c.downAt>=650);
