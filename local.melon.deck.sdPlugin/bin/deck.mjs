@@ -286,7 +286,8 @@ async function browse(c,ticks,commit) {
     if (!c.item && c.encoder && liveQueue?.title) c.item=liveQueue;
     if (commit && c.item) {
       const {index,title,artist}=c.item;
-      await command('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex});
+      await native('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex});
+      await refresh();
       c.item=null;lastQueueRead=0;
       c.notice={text:'선택한 곡 재생',until:Date.now()+900};
     } else if (!c.item) {

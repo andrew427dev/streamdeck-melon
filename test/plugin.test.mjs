@@ -135,7 +135,8 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  await until(()=>messages.some(m=>m.context==='q'&&m.payload?.song==='▸ 테스트'));
  t.diagnostic('회전 입력 → 곡명 표시 '+(await feedback).toFixed(1)+' ms (목록 조회 지연 180 ms)');
  assert.equal((await ops()).filter(x=>x.op==='queue').length,readsBefore,'주변 곡을 표시할 때 멜론 재조회');
- send('touchTap','q',{},'queue');
+ send('dialDown','q',{},'queue');
+ send('dialUp','q',{},'queue');
  await until(async()=>(await ops()).some(x=>x.op==='queuePlay'&&x.index===5&&x.title==='테스트'));
  // Cross the prefetched boundary and reverse direction while Melon is still answering.
  send('dialRotate','q',{ticks:50},'queue');
@@ -146,6 +147,7 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  send('dialRotate','q',{ticks:1},'queue');
  await until(async()=>(await ops()).some(x=>x.op==='queuePlay' && x.index===8 && x.title==='곡 8'));
  assert.equal((await ops()).filter(x=>x.op==='queue').length,readsBefore+1);
+ assert.equal((await ops()).some(x=>x.op==='launch'),false,'열린 멜론에서 재생할 때 앱을 다시 열지 않습니다');
  send('willAppear','timer',{controller:'Keypad',settings:{minutes:1}},'sleep');
  send('keyDown','timer',{},'sleep');
  await until(()=>messages.some(m=>m.event==='setGlobalSettings'&&m.payload.deadline>Date.now()));
