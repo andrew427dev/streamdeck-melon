@@ -6,24 +6,24 @@
       "key": "cover",
       "type": "pixmap",
       "rect": [
-        7,
-        7,
-        43,
-        43
+        11,
+        11,
+        39,
+        39
       ]
     },
     {
       "key": "song",
       "type": "text",
       "rect": [
-        56,
-        5,
+        55,
+        9,
         140,
-        23
+        21
       ],
       "font": {
-        "size": 17,
-        "weight": 650
+        "size": 16,
+        "weight": 600
       },
       "color": "#FFFFFF",
       "alignment": "left",
@@ -33,14 +33,14 @@
       "key": "artist",
       "type": "text",
       "rect": [
-        56,
-        28,
+        55,
+        30,
         140,
-        22
+        20
       ],
       "font": {
-        "size": 16,
-        "weight": 500
+        "size": 15,
+        "weight": 450
       },
       "color": "#C9C9C9",
       "alignment": "left",
@@ -50,10 +50,10 @@
       "key": "elapsed",
       "type": "text",
       "rect": [
-        5,
+        11,
         58,
-        49,
-        26
+        42,
+        22
       ],
       "font": {
         "size": 17,
@@ -67,20 +67,20 @@
       "key": "modes",
       "type": "pixmap",
       "rect": [
-        54,
-        57,
-        92,
-        28
+        53,
+        56,
+        91,
+        25
       ]
     },
     {
       "key": "duration",
       "type": "text",
       "rect": [
-        146,
+        144,
         58,
-        49,
-        26
+        44,
+        22
       ],
       "font": {
         "size": 17,
@@ -94,9 +94,9 @@
       "key": "progress",
       "type": "bar",
       "rect": [
-        6,
-        91,
-        188,
+        11,
+        87,
+        177,
         4
       ],
       "value": 0,

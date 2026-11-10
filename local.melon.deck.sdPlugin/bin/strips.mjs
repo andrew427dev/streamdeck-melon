@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 
 const svgURI = svg => 'data:image/svg+xml;base64,'+Buffer.from(svg).toString('base64');
 const logo = svgURI(readFileSync(new URL('../imgs/melon-category.svg', import.meta.url),'utf8').replaceAll('#ddd','#04e632'));
+const emptyCover = svgURI('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="4" fill="#202020"/><path d="M16 26V13l13-3v13M16 16l13-3" fill="none" stroke="#aaa" stroke-width="2.4"/><g fill="#aaa"><ellipse cx="13" cy="27" rx="4" ry="3"/><ellipse cx="26" cy="24" rx="4" ry="3"/></g></svg>');
 const time = seconds => Number.isFinite(seconds) ? Math.floor(seconds/60)+':'+String(Math.floor(seconds)%60).padStart(2,'0') : '';
 
 function controls(state) {
@@ -26,7 +27,7 @@ export function dialStrip(kind,state,{item,cover,notice,browsing}={}) {
   }
   const hasTime=Number.isFinite(state.elapsed) && state.duration>0;
   return {layout:'transport',feedback:{
-    cover:cover||logo, song:state.title||state.error||'멜론 플레이어',
+    cover:cover||emptyCover, song:state.title||state.error||'멜론 플레이어',
     artist:notice||state.artist||state.view||(state.playing?'재생 중':'재생 대기'),
     modes:controls(state),elapsed:time(state.elapsed),duration:time(state.duration),
     progress:{enabled:hasTime,value:hasTime?Math.min(100,Math.round(state.elapsed*100/state.duration)):0}

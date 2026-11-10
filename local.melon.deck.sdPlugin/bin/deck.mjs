@@ -3,7 +3,7 @@ import {chmodSync,statSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {search, exactSong, coverFor, collection, playURL} from './catalog.mjs';
-
+import {trackReader} from './now-playing.mjs';
 import {dialStrip} from './strips.mjs';
 import {keyLine,keySVG,stripFeedback} from './faces.mjs';
 
@@ -122,7 +122,7 @@ function draw(c) {
   } else if (c.kind==='add') value=s.destination==='favorites'?'다이얼 보관함':s.list||'목록 이름 설정';
   if (state.running===false && !isBrowse && c.kind!=='sleep') value='멜론 열기';
   if (state.error && !['collection','search'].includes(c.kind)) hint=state.error;
-  if (c.notice && c.notice.until>Date.now()) {value=c.notice.text;hint='';image='';}
+  if (c.notice && c.notice.until>Date.now()) {value=c.notice.text;hint='';}
   let event, payload;
   if (c.encoder) {
     event='setFeedback';
@@ -201,7 +201,7 @@ function draw(c) {
 function drawAll(){for (const c of actions.values()) draw(c);}
 function updateArt() {
   const enabled=[...actions.values()].some(c=>['now','multimedia','playback'].includes(c.kind)&&c.settings.showArtwork!==false);
-  const album=liveQueue?.album||'';
+  const album=state.album||liveQueue?.album||'';
   const key=enabled && state.title && state.artist ? JSON.stringify([state.title,state.artist,album]) : '';
   if (key===artKey && (!key || Date.now()-artAttempt<600000)) return;
   artKey=key;art='';artAttempt=Date.now();
@@ -224,11 +224,20 @@ function updateQueue() {
     .catch(()=>{if (key===queueKey) liveQueue=null;})
     .finally(()=>{pendingQueue=null;updateArt();drawAll();});
 }
+const readTrack=trackReader(()=>native('trackInfo'), resolved=>{
+  state=resolved;
+  updateQueue();updateArt();drawAll();
+});
 async function refresh() {
   if (refreshing || !actions.size) return;
   refreshing=true;
-  try { state=await native('status'); }
-  catch(e){state={error:textError(e)};}
+  try {
+    const raw=await native('status');
+    const needsTrack=[...actions.values()].some(c=>['multimedia','now','playback','queue'].includes(c.kind));
+    if (!needsTrack) readTrack({running:false});
+    state=needsTrack?readTrack(raw):raw;
+  }
+  catch(e){state=readTrack({error:textError(e)});}
   finally {refreshing=false;}
   if (state.running===false) {
     restoreQueueOnLaunch=[...actions.values()].some(c=>c.encoder && c.kind==='queue');

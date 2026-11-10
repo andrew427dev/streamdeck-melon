@@ -189,3 +189,25 @@ test('Stream Deck 이벤트를 실제 진입점에서 볼륨, 클릭, 대기열,
  assert.ok(!selection.some(x=>x.op==='launch'));
 
 });
+
+test('가사와 일시정지 중에는 곡 정보를 유지하고 곡이 바뀌면 이전 조회 결과를 버립니다',async()=>{
+  const {trackReader}=await import('../local.melon.deck.sdPlugin/bin/now-playing.mjs');
+  const jobs=[], updates=[];
+  const read=trackReader(()=>new Promise(resolve=>jobs.push(resolve)),result=>updates.push(result));
+  const status={running:true,pid:1,duration:400,elapsed:10,playing:true};
+  const song={title:'곡명',artist:'가수',album:'앨범'};
+  read(status,1000);
+  read({...status,playing:false},2000);
+  assert.equal(jobs.length,1);
+  jobs.shift()(song);
+  await wait(0);
+  assert.equal(updates[0].playing,false);
+  assert.equal(read({...status,elapsed:11},3000).title,song.title);
+  assert.equal(read({...status,elapsed:0},4000).title,undefined);
+  read({running:false},5000);
+  jobs.shift()(song);
+  await wait(0);
+  assert.equal(updates.length,1);
+  assert.equal(read({...status,title:'새 곡',artist:'새 가수'},6000).title,'새 곡');
+  assert.equal(jobs.length,0);
+});

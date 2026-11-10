@@ -104,9 +104,65 @@ struct Player {
         }
         return ("","")
     }
+    // A synchronized lyric replaces the title in Melon's transport bar. The
+    // current-song card still exposes the two labels even with the queue closed.
+    func trackDetails() throws -> Record {
+        let bar = try parts()
+        func card() -> [Element]? {
+            for window in windows {
+                for panel in nodes(window) where role(panel) == "AXGroup" {
+                    let children = nodes(panel)
+                    if children.contains(where:{ name($0) == "곡 정보" }) { return children }
+                }
+            }
+            return nil
+        }
+        func read(_ children: [Element]) throws -> Record {
+            guard let header = children.firstIndex(where:{ name($0) == "곡 정보" }) else { throw Problem("곡 정보 없음") }
+            // Melon exposes title and artist as consecutive text fields before
+            // the row of action buttons, even when the title scrolls in the queue.
+            let content = children.dropFirst(header+1)
+            let credit = content.prefix(while: { role($0) != "AXButton" })
+                .filter { ["AXStaticText","AXTextField"].contains(role($0)) }
+                .map(name).filter { !$0.isEmpty && !["FLAC","MP3","AAC","Hi-Fi","HiFi"].contains($0) }
+            guard credit.count == 2 else { throw Problem("곡명과 가수를 읽을 수 없습니다") }
+            let album = content.drop(while:{ role($0) != "AXButton" })
+                .filter { ["AXStaticText","AXTextField"].contains(role($0)) }.map(name)
+                .first { !$0.trimmingCharacters(in:CharacterSet(charactersIn:"0123456789, ")).isEmpty } ?? ""
+            return ["title":credit[0],"artist":credit[1],"album":album]
+        }
+        // Use the active row when its individual title and artist cells are exposed.
+        if let table = queueTable() {
+            for row in nodes(table,"AXVisibleRows") {
+                let cells = nodes(row)
+                guard cells.count >= 5, nodes(cells[0]).contains(where:{ name($0).replacingOccurrences(of:"_",with:" ").contains("eq playlist") }) else { continue }
+                let fields = cells[1...3].map { cell in nodes(cell).first(where:{ role($0) == "AXStaticText" }).map(name) ?? "" }
+                if !fields[0].isEmpty && !fields[1].isEmpty { return ["title":fields[0],"artist":fields[1],"album":fields[2]] }
+            }
+        }
+        guard let toggle = bar.inner.last(where:{ role($0) == "AXCheckBox" }),
+              bar.inner.filter({ role($0) == "AXCheckBox" }).count >= 3 else { throw Problem("곡 정보 보기를 찾을 수 없습니다") }
+        let isOpen = (attribute(toggle,"AXValue") as? NSNumber)?.boolValue
+        if let shown = card() {
+            guard isOpen == true else { throw Problem("다른 곡 정보가 열려 있습니다") }
+            return try read(shown)
+        }
+        guard isOpen == false else { throw Problem("곡 정보가 준비되지 않았습니다") }
+        try press(toggle,"현재 곡 정보를 열 수 없습니다")
+        defer {
+            if let shown = card(), let header = shown.firstIndex(where:{ name($0) == "곡 정보" }),
+               header > 0, role(shown[header-1]) == "AXButton" {
+                _ = AXUIElementPerformAction(shown[header-1],"AXPress" as CFString)
+            } else if (attribute(toggle,"AXValue") as? NSNumber)?.boolValue == true {
+                _ = AXUIElementPerformAction(toggle,"AXPress" as CFString)
+            }
+        }
+        guard let shown = poll(card) else { throw Problem("곡 정보 보기를 읽을 수 없습니다") }
+        return try read(shown)
+    }
     func state() throws -> Record {
         let menuItems = menu("재생")
-        var result: Record = ["running":true]
+        var result: Record = ["running":true,"pid":process.processIdentifier]
         let marked = menuItems.filter(checked).map(name)
         result["repeat"] = marked.first { ["전체 반복","한곡 반복","한 곡 반복","반복 없음"].contains($0) }
         if let item = menuItems.first(where:{ ["재생","재생하기","일시정지","일시 정지"].contains(name($0)) }) {
@@ -459,6 +515,7 @@ func handle(_ r: Record) throws -> Record {
     AXUIElementSetMessagingTimeout(p.app,2.0)
     switch op {
     case "status":return try p.state()
+    case "trackInfo":return try p.trackDetails()
     case "volume":try p.volume(r["steps"] as? Int ?? 0)
     case "toggle","next","previous","play","pause","repeat","shuffle":try p.playback(op)
     case "queue","queuePreview","queuePlay","like","add":return try p.queue(r,op)
