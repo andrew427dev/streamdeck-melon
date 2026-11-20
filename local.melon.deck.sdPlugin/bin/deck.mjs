@@ -12,22 +12,52 @@ const bridge=fileURLToPath(new URL('./MelonBridge',import.meta.url));
 // Stream Deck extracts secondary executables without their owner-execute bit.
 const bridgeMode=statSync(bridge).mode;
 if (!(bridgeMode & 0o100)) chmodSync(bridge,(bridgeMode & 0o777)|0o100);
+let activeQueueCommand=null, queueGeneration=0, trackGeneration=0;
+function interruptQueue() {
+  queueGeneration++;
+  activeQueueCommand?.cancel();
+}
 function native(op, args={}) {
   return new Promise((resolve,reject)=>{
     const child=spawn(bridge,[],{stdio:['pipe','pipe','ignore']});
+    let out='', cancelled=false, timedOut=false, forceKill, cancelSignal;
+    const operation={cancel(){
+      if (cancelled) return;
+      cancelled=true;
+      child.kill('SIGTERM');
+      cancelSignal=setInterval(()=>child.kill('SIGTERM'),150);
+      // Allow the bridge to restore shuffle and finish an in-flight AX call.
+      forceKill=setTimeout(()=>child.kill('SIGKILL'),8000);
+    }};
+    if (op==='queuePlay') activeQueueCommand=operation;
     const timeoutMs=op==='queuePlay' ? 12000+3000*count(args.count,1,10000,250) : 12000;
-    const timeout=setTimeout(()=>child.kill('SIGKILL'),timeoutMs);
-    let out='';
+    const timeout=setTimeout(()=>{
+      timedOut=true;
+      if (op==='queuePlay') operation.cancel(); else child.kill('SIGKILL');
+    },timeoutMs);
+    function cleanup() {
+      clearTimeout(timeout);clearTimeout(forceKill);clearInterval(cancelSignal);
+      if (activeQueueCommand===operation) activeQueueCommand=null;
+    }
     child.stdout.setEncoding('utf8').on('data',part=>out+=part);
     child.stdin.on('error',()=>{});
-    child.on('error',error=>{clearTimeout(timeout);reject(error);});
-    child.on('close',()=>{
-      clearTimeout(timeout);
+    child.on('error',error=>{cleanup();reject(error);});
+    child.on('close',(_code,signal)=>{
+      cleanup();
+      if (['next','previous','queuePlay'].includes(op)) {
+        readTrack.invalidate();trackGeneration++;queueKey='';lastQueueRead=0;
+      }
       try {
+        if (!out && cancelled && signal==='SIGTERM' && !timedOut) {
+          throw Object.assign(Error('곡 이동을 취소했습니다'),{cancelled:true});
+        }
         const reply=JSON.parse(out);
-        if (!reply.ok) throw Error(reply.error);
+        if (!reply.ok) throw Object.assign(Error(reply.error),{cancelled:reply.cancelled===true && !timedOut});
         resolve(reply.data);
-      } catch (e) {reject(Error(out ? e.message : '멜론 연결 시간이 초과되었습니다'));}
+      } catch (error) {
+        if (out || error.cancelled) reject(error);
+        else reject(Error(op==='queuePlay' ? '멜론 연결 시간이 초과되었습니다. 현재 곡과 셔플 상태를 확인해 주세요' : '멜론 연결 시간이 초과되었습니다'));
+      }
     });
     child.stdin.end(JSON.stringify({op,...args}));
   });
@@ -36,10 +66,10 @@ const arg = key=>process.argv[process.argv.indexOf(key)+1];
 const socket=new WebSocket('ws://127.0.0.1:'+Number(arg('-port')));
 const pluginID=arg('-pluginUUID');
 const actions=new Map();
-let state={}, globalSettings={}, ready=false, busy=Promise.resolve(), refreshing=false, deadlineBusy=false;
+let state={}, globalSettings={}, ready=false, busy=Promise.resolve(), refreshing=false, deadlineBusy=false, stopping=false;
 let liveQueue=null, queueKey='', lastQueueRead=0, pendingQueue=null;
 let restoreQueueOnLaunch=false;
-let artKey='', art='', artAttempt=0;
+let artKey='', art='', artRetryAt=0, artFailures=0, artGeneration=0, artPending=false;
 const labels={multimedia:'멀티미디어',queue:'재생 대기열',playback:'재생 제어',volume:'볼륨',shuffle:'셔플',repeat:'반복',like:'좋아요',add:'목록에 담기',collection:'컬렉션',search:'저장된 검색',sleep:'취침 타이머',now:'지금 재생 중'};
 const count=(n,min,max,defaultValue)=>Number.isFinite(Number(n)) ? Math.min(max,Math.max(min,Math.round(Number(n)))) : defaultValue;
 const move=(idx,ticks,total)=>Math.max(0,Math.min(total-1,idx+ticks));
@@ -52,12 +82,20 @@ function send(event,context,payload,action) {
 function textError(error) {
   return /fetch|network|timed out|JSON|Unexpected token/i.test(error.message) ? '멜론 연결을 확인해 주세요' : error.message;
 }
-function serialize(c,job) {
-  busy=busy.then(async()=>{
-    if (c && actions.get(c.id)!==c) return;
+function enqueue(job) {
+  const result=busy.then(()=>stopping?undefined:job());
+  busy=result.catch(()=>{});
+  return result;
+}
+function serialize(c,job,{queueSelection=false}={}) {
+  const settings=c?.settings, generation=queueGeneration;
+  void enqueue(async()=>{
+    if (c && (actions.get(c.id)!==c || c.settings!==settings)) return;
+    if (queueSelection && generation!==queueGeneration) return;
     try {await job();}
     catch(error) {
-      if (c) {
+      if (error.cancelled) {await refresh();return;}
+      if (c && actions.get(c.id)===c && c.settings===settings) {
         if (c.kind === 'queue') send('logMessage',pluginID,{message:'Melon queue: '+textError(error)});
         c.notice={text:textError(error),until:Date.now()+4500};
         send('showAlert',c.id,{});
@@ -74,11 +112,14 @@ function usesFavorites(c) {
   return c.settings.source==='favorites' || ((!c.settings.source || c.settings.source==='auto') && !String(c.settings.entries||'').trim());
 }
 function savedSongs() {return Array.isArray(globalSettings.favorites)?globalSettings.favorites:[];}
-async function toggleFavorite() {
+async function toggleFavorite(c) {
+  const settings=c.settings;
   if (!ready) throw Error('보관함을 불러오는 중입니다');
-  const track=await native('status');
+  const raw=await native('status');
+  const track=raw.title && raw.artist ? raw : {...raw,...await native('trackInfo')};
   if (!track.title || !track.artist) throw Error('현재 곡을 찾을 수 없습니다');
   const found=await exactSong(track.title,track.artist);
+  if (actions.get(c.id)!==c || c.settings!==settings) return '';
   const before=savedSongs();
   const exists=before.some(item=>item.id===found.id);
   if (!exists && before.length>=500) throw Error('보관함이 가득 찼습니다');
@@ -200,12 +241,22 @@ function draw(c) {
 }
 function drawAll(){for (const c of actions.values()) draw(c);}
 function updateArt() {
-  const enabled=[...actions.values()].some(c=>['now','multimedia','playback'].includes(c.kind)&&c.settings.showArtwork!==false);
+  const enabled=[...actions.values()].some(c=>['now','multimedia'].includes(c.kind)&&c.settings.showArtwork!==false);
   const album=state.album||liveQueue?.album||'';
   const key=enabled && state.title && state.artist ? JSON.stringify([state.title,state.artist,album]) : '';
-  if (key===artKey && (!key || Date.now()-artAttempt<600000)) return;
-  artKey=key;art='';artAttempt=Date.now();
-  if (key) coverFor({...state,album}).then(uri=>{if (key===artKey){art=uri;drawAll();}}).catch(()=>{});
+  if (key!==artKey) {
+    artKey=key;art='';artRetryAt=0;artFailures=0;artPending=false;artGeneration++;
+  }
+  if (!key || artPending || Date.now()<artRetryAt) return;
+  artPending=true;
+  const generation=artGeneration;
+  coverFor({...state,album}).catch(()=>'').then(uri=>{
+    if (generation!==artGeneration) return;
+    art=uri;artPending=false;
+    artFailures=uri?0:artFailures+1;
+    artRetryAt=Date.now()+(uri?600000:Math.min(60000,5000*2**Math.min(artFailures-1,4)));
+    drawAll();
+  });
 }
 function updateQueue() {
   const enabled=state.running && [...actions.values()].some(c=>c.encoder && (c.kind==='queue' || (c.kind==='multimedia' && c.settings.showArtwork!==false)));
@@ -218,13 +269,18 @@ function updateQueue() {
   lastQueueRead=Date.now();
   const includeNearby=[...actions.values()].some(c=>c.encoder && c.kind==='queue');
   const restoreOnLaunch=restoreQueueOnLaunch && Boolean(state.title) && includeNearby;
-  if (restoreOnLaunch) restoreQueueOnLaunch=false;
-  pendingQueue=native('queuePreview',{currentIndex:liveQueue?.currentIndex,restoreOnLaunch,includeNearby})
-    .then(result=>{if (key===queueKey) liveQueue={...result,readAt:Date.now()};})
-    .catch(()=>{if (key===queueKey) liveQueue=null;})
+  const generation=trackGeneration;
+  pendingQueue=enqueue(async()=>{
+    if (key!==queueKey || generation!==trackGeneration) return {};
+    const result=await native('queuePreview',{currentIndex:liveQueue?.currentIndex,restoreOnLaunch,includeNearby});
+    if (restoreOnLaunch && state.running!==false) restoreQueueOnLaunch=false;
+    return result;
+  })
+    .then(result=>{if (key===queueKey && generation===trackGeneration) liveQueue={...result,readAt:Date.now()};})
+    .catch(()=>{if (key===queueKey && generation===trackGeneration) liveQueue=null;})
     .finally(()=>{pendingQueue=null;updateArt();drawAll();});
 }
-const readTrack=trackReader(()=>native('trackInfo'), resolved=>{
+const readTrack=trackReader(isCurrent=>enqueue(()=>isCurrent() && [...actions.values()].some(c=>['multimedia','now','queue'].includes(c.kind)) ? native('trackInfo') : undefined), resolved=>{
   state=resolved;
   updateQueue();updateArt();drawAll();
 });
@@ -233,7 +289,7 @@ async function refresh() {
   refreshing=true;
   try {
     const raw=await native('status');
-    const needsTrack=[...actions.values()].some(c=>['multimedia','now','playback','queue'].includes(c.kind));
+    const needsTrack=[...actions.values()].some(c=>['multimedia','now','queue'].includes(c.kind));
     if (!needsTrack) readTrack({running:false});
     state=needsTrack?readTrack(raw):raw;
   }
@@ -268,11 +324,12 @@ function turnQueue(c,ticks) {
   if (c.queueTurns) {c.queueTurns.push(ticks);return;}
   const turns=[ticks];
   c.queueTurns=turns;
-  const key=queueKey;
+  const baseAtInput=c.item||liveQueue;
+  const settings=c.settings;
   serialize(c,async()=>{
     if (c.queueTurns===turns) c.queueTurns=null;
-    if (state.running===false || queueKey!==key) return;
-    let base=c.item || liveQueue;
+    if (state.running===false) return;
+    let base=c.item || baseAtInput || liveQueue;
     if (!base?.title) base={...await native('queue',{includeNearby:true}),readAt:Date.now()};
     const index=turns.reduce((at,step)=>move(at,step,base.count),base.index);
     const page=[liveQueue,base].filter(p=>p?.count===base.count && Date.now()-p.readAt<10000)
@@ -285,20 +342,21 @@ function turnQueue(c,ticks) {
     } else {
       selected={...await native('queue',{index,includeNearby:true}),readAt:Date.now()};
     }
-    if (queueKey!==key || actions.get(c.id)!==c) return;
+    if (actions.get(c.id)!==c || c.settings!==settings) return;
     c.item=selected;
     c.notice=null;
     draw(c);
   });
 }
 async function browse(c,ticks,commit) {
+  const settings=c.settings;
   const queue=c.kind==='queue';
   if (queue) {
     if (!c.item && c.encoder && liveQueue?.title) c.item=liveQueue;
     if (commit && c.item) {
       const {index,title,artist}=c.item;
-      await native('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex,count:c.item.count});
-      c.item=null;lastQueueRead=0;
+      try {await native('queuePlay',{index,title,artist,currentIndex:liveQueue?.currentIndex,count:c.item.count});}
+      finally {c.item=null;lastQueueRead=0;}
       await refresh();
       c.notice={text:'선택한 곡 재생',until:Date.now()+900};
     } else if (!c.item) {
@@ -307,7 +365,11 @@ async function browse(c,ticks,commit) {
   } else {
     if (!c.entries || (c.kind==='search' && Date.now()-c.loaded>60000)) {
       const old=c.item;
-      if (c.kind==='search') c.entries=await search(String(c.settings.query||''));
+      if (c.kind==='search') {
+        const entries=await search(String(settings.query||''));
+        if (actions.get(c.id)!==c || c.settings!==settings) return;
+        c.entries=entries;
+      }
       else if (usesFavorites(c)) {
         c.entries=savedSongs();
         if (!c.entries.length) throw Error('‘보관함에 담기’ 버튼으로 곡을 저장해 주세요');
@@ -323,7 +385,9 @@ async function browse(c,ticks,commit) {
     const index=move(c.item?.index||0,ticks,c.entries.length);
     c.item={...c.entries[index],index,count:c.entries.length};
     if (commit) {
+      if (actions.get(c.id)!==c || c.settings!==settings) return;
       await openApp(playURL(c.item));
+      readTrack.invalidate();trackGeneration++;queueKey='';lastQueueRead=0;
       c.notice={text:'멜론에 재생 요청',until:Date.now()+1000};
     }
   }
@@ -368,7 +432,12 @@ async function act(c,input,ticks=0,pressed=false) {
   else if (c.kind==='volume') {
     if (c.encoder) await command('toggle');
     else await command('volume',{steps:count(s.volumeSteps,1,3,1)*(Number(s.direction||1)<0?-1:1)});
-  } else if (c.kind==='add') await command('add',{list:String(s.list||'')});
+  } else if (c.kind==='add') {
+    if (s.destination==='favorites') {
+      const message=await toggleFavorite(c);
+      if (message) c.notice={text:message,until:Date.now()+1800};
+    } else await command('add',{list:String(s.list||'')});
+  }
   else if (['repeat','shuffle','like'].includes(c.kind)) await command(c.kind);
   draw(c);
 }
@@ -392,6 +461,7 @@ socket.addEventListener('open',()=>{
     .catch(e=>send('logMessage',pluginID,{message:'Melon Deck ready: '+textError(e)}));
 });
 socket.addEventListener('message',({data})=>{
+  if (stopping) return;
   let msg;
   try {msg=JSON.parse(data);} catch{return;}
   const {event,context,action,payload={}}=msg;
@@ -399,7 +469,10 @@ socket.addEventListener('message',({data})=>{
   if (event==='didReceiveGlobalSettings') {globalSettings=payload.settings||{};ready=true;drawAll();return;}
   if (event==='willDisappear' || event==='willAppear') {
     if (c){clearTimeout(c.clickTimer);clearTimeout(c.turnTimer);actions.delete(context);}
-    if (event==='willDisappear') return;
+    if (event==='willDisappear') {
+      if (c?.kind==='queue') interruptQueue();
+      updateArt();return;
+    }
     c={id:context,kind:action.split('.').pop(),settings:payload.settings||{},encoder:payload.controller==='Encoder',clicks:0};
     actions.set(context,c);draw(c);void refresh();return;
   }
@@ -418,12 +491,18 @@ socket.addEventListener('message',({data})=>{
     return;
   }
   if (event==='didReceiveSettings') {
+    clearTimeout(c.clickTimer);clearTimeout(c.turnTimer);c.clicks=0;c.turn=null;c.queueTurns=null;
+    if (c.kind==='queue') interruptQueue();
     c.settings=payload.settings||{};c.item=null;c.entries=null;updateArt();draw(c);return;
   }
   if (event==='dialRotate') {
+    if (['multimedia','volume','now'].includes(c.kind) && !c.browsing) interruptQueue();
     const pressed=!!payload.pressed;
     if (pressed) c.turnedWhileDown=true;
-    if (c.encoder && c.kind==='queue') {turnQueue(c,Number(payload.ticks)||0);return;}
+    if (c.encoder && c.kind==='queue') {
+      if (activeQueueCommand) interruptQueue();
+      turnQueue(c,Number(payload.ticks)||0);return;
+    }
     if (c.turn && c.turn.pressed!==pressed) flushRotation(c);
     c.turn={ticks:(c.turn?.ticks||0)+(Number(payload.ticks)||0),pressed};
     clearTimeout(c.turnTimer);c.turnTimer=setTimeout(()=>flushRotation(c),55);return;
@@ -433,21 +512,24 @@ socket.addEventListener('message',({data})=>{
     c.queueTurns=null; // Subsequent rotations belong after this input.
     flushRotation(c);
     if (event==='dialUp' && c.turnedWhileDown) {c.turnedWhileDown=false;return;}
+    if (['multimedia','volume','now','playback','queue','shuffle','repeat'].includes(c.kind)) interruptQueue();
     const hold=(event==='touchTap'&&payload.hold)||(event==='dialUp'&&c.downAt&&Date.now()-c.downAt>=650);
     if (event==='dialUp' && c.kind==='multimedia' && !hold && !c.browsing) {
       c.clicks++;clearTimeout(c.clickTimer);
       if (c.clicks>=3) flushClicks(c);else c.clickTimer=setTimeout(()=>flushClicks(c),320);
-    } else serialize(c,()=>act(c,hold?'hold':'push'));
+    } else serialize(c,()=>act(c,hold?'hold':'push'),{queueSelection:c.kind==='queue'});
   }
 });
-setInterval(()=>{
+const deadlineTimer=setInterval(()=>{
   if (!ready || !globalSettings.deadline || deadlineBusy || globalSettings.deadline>Date.now()) return;
   deadlineBusy=true;
+  const dueDeadline=globalSettings.deadline;
+  const shouldPause=Date.now()-dueDeadline<90000;
+  if (shouldPause) interruptQueue();
   serialize(null,async()=>{
     try {
-      if (!globalSettings.deadline || globalSettings.deadline>Date.now()) return;
-      const late=Date.now()-globalSettings.deadline;
-      if (late<90000) await native('pause');
+      if (globalSettings.deadline!==dueDeadline) return;
+      if (shouldPause) await native('pause');
       putSettings({deadline:0});
     } catch(e) {
       if (Date.now()-globalSettings.deadline>=90000) putSettings({deadline:0});
@@ -455,7 +537,17 @@ setInterval(()=>{
     } finally {deadlineBusy=false;drawAll();}
   });
 },1000);
-setInterval(()=>{void refresh();},1600);
-setInterval(drawAll,550);
-socket.addEventListener('close',()=>process.exit(0));
-socket.addEventListener('error',()=>process.exit(1));
+const refreshTimer=setInterval(()=>{void refresh();},1600);
+const drawTimer=setInterval(drawAll,550);
+function shutdown(code) {
+  if (stopping) return;
+  stopping=true;
+  clearInterval(deadlineTimer);clearInterval(refreshTimer);clearInterval(drawTimer);
+  actions.clear();readTrack.invalidate();interruptQueue();
+  void busy.finally(()=>process.exit(code));
+  setTimeout(()=>process.exit(code),14000).unref();
+}
+socket.addEventListener('close',()=>shutdown(0));
+socket.addEventListener('error',()=>shutdown(1));
+process.on('SIGTERM',()=>shutdown(0));
+process.on('SIGINT',()=>shutdown(0));

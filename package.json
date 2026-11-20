@@ -4,7 +4,7 @@
   "description": "macOS용 멜론 플레이어를 조작하는 Stream Deck + 플러그인",
   "repository": "github:andrew427dev/streamdeck-melon",
   "scripts": {
-    "test": "node --test test/plugin.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "build": "./build.sh"
   },
   "engines": {

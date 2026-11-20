@@ -14,19 +14,43 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build
-      - name: 설치 파일과 Universal 실행 파일 검사
+      - name: 릴리스 버전과 설치 파일 검사
         run: |
-          unzip -tq local.melon.deck.streamDeckPlugin
-          architectures=$(lipo -archs local.melon.deck.sdPlugin/bin/MelonBridge)
-          for arch in arm64 x86_64; do
-            grep -qw "$arch" <<< "$architectures"
-          done
-          codesign --verify --strict local.melon.deck.sdPlugin/bin/MelonBridge
-          shasum -a 256 local.melon.deck.streamDeckPlugin > SHA256SUMS.txt
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            python3 scripts/prepare-release.py --tag "$GITHUB_REF_NAME"
+          fi
+          python3 -m unittest discover -s test -p 'test_release.py'
+          cd dist
+          shasum -a 256 -c SHA256SUMS.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: streamdeck-melon-macos
-          path: |
-            local.melon.deck.streamDeckPlugin
-            SHA256SUMS.txt
+          path: dist/
           if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: streamdeck-melon-macos
+          path: dist
+      - run: python3 scripts/verify-package.py --package dist/local.melon.deck.streamDeckPlugin --profile dist/melon-plus.streamDeckProfile --tag "$GITHUB_REF_NAME"
+      - run: cd dist && shasum -a 256 -c SHA256SUMS.txt
+      - name: 검증된 베타 설치 파일 게시
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release download "$GITHUB_REF_NAME" --dir existing-release
+            python3 scripts/verify-package.py --package existing-release/local.melon.deck.streamDeckPlugin --profile existing-release/melon-plus.streamDeckProfile --tag "$GITHUB_REF_NAME"
+            cd existing-release
+            shasum -a 256 -c SHA256SUMS.txt
+          else
+            gh release create "$GITHUB_REF_NAME" dist/local.melon.deck.streamDeckPlugin dist/melon-plus.streamDeckProfile dist/SHA256SUMS.txt --verify-tag --prerelease --title "melon $GITHUB_REF_NAME" --generate-notes
+          fi

@@ -10,7 +10,10 @@ function controls(state) {
   const playback = state.playing
     ? '<path d="M43 8v12m6-12v12" stroke="#fff" stroke-width="3"/>'
     : '<path d="m42 7 11 7-11 7z" fill="#fff" stroke="none"/>';
-  return svgURI('<svg xmlns="http://www.w3.org/2000/svg" width="92" height="28" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path stroke="'+color(state.shuffle)+'" d="M7 9h3c5 0 8 10 13 10h3m-3-3 3 3-3 3M7 19h3c2 0 3-1 5-4m4-5 3-1h4m-3-3 3 3-3 3"/>'+playback+'<path stroke="'+color(state.repeat && state.repeat!=='반복 없음')+'" d="M67 13v-2q0-3 4-3h13l-3-3m3 3-3 3m4 4v2q0 3-4 3H68l3 3m-3-3 3-3"/></svg>');
+  const singleRepeat=['한곡 반복','한 곡 반복'].includes(state.repeat)
+    ? '<text x="76" y="17" fill="#04e632" stroke="none" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="700">1</text>'
+    : '';
+  return svgURI('<svg xmlns="http://www.w3.org/2000/svg" width="92" height="28" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path stroke="'+color(state.shuffle)+'" d="M7 9h3c5 0 8 10 13 10h3m-3-3 3 3-3 3M7 19h3c2 0 3-1 5-4m4-5 3-1h4m-3-3 3 3-3 3"/>'+playback+'<path stroke="'+color(state.repeat && state.repeat!=='반복 없음')+'" d="M67 13v-2q0-3 4-3h13l-3-3m3 3-3 3m4 4v2q0 3-4 3H68l3 3m-3-3 3-3"/>'+singleRepeat+'</svg>');
 }
 
 export function dialStrip(kind,state,{item,cover,notice,browsing}={}) {
@@ -20,7 +23,7 @@ export function dialStrip(kind,state,{item,cover,notice,browsing}={}) {
   if (kind==='queue') {
     const song=item?.title;
     return {layout:'queue',feedback:{
-      header:'☰  재생 대기열', song:song?'▸ '+song:state.error||'재생 대기열',
+      header:state.shuffle?'☰  목록 순서 · 셔플':'☰  재생 대기열', song:song?'▸ '+song:state.error||'재생 대기열',
       artist:song?item.artist||'':item?.end?'다음 곡 없음':'돌려서 목록 열기',
       following:notice||(item?.nextTitle?'↳ '+item.nextTitle:'')
     }};

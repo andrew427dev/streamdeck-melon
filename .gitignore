@@ -5,3 +5,6 @@ local.melon.deck.sdPlugin/bin/MelonBridge
 local.melon.deck.sdPlugin/logs/
 *.log
 local.melon.deck.sdPlugin/imgs/faces/
+
+dist/
+__pycache__/

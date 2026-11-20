@@ -5,6 +5,79 @@ typealias Element = AXUIElement
 typealias Record = [String: Any]
 let bundle = "com.iloen.macmelon"
 
+struct QueueRowInfo {
+    let title: String
+    let artist: String
+    let album: String
+    let active: Bool
+
+    init(columns: [String], active: Bool) {
+        // The first column is the active-track marker. Keep unavailable fields
+        // in their original columns so artist/album never become the title.
+        title = columns.count > 1 ? columns[1] : ""
+        artist = columns.count > 2 ? columns[2] : ""
+        album = columns.count > 3 ? columns[3] : ""
+        self.active = active
+    }
+}
+
+struct QueueMoveCancelled: LocalizedError {
+    var errorDescription: String? { "곡 이동을 취소했습니다" }
+}
+
+final class QueueCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+    private var source: DispatchSourceSignal?
+
+    func listenForTermination() {
+        let listener = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global(qos: .userInitiated))
+        listener.setEventHandler { [weak self] in self?.request() }
+        let registered = DispatchSemaphore(value: 0)
+        listener.setRegistrationHandler { registered.signal() }
+        // Dispatch invokes the callback on a regular queue, not inside a POSIX
+        // signal handler. Locking and Swift object access are safe there.
+        signal(SIGTERM, SIG_IGN)
+        source = listener
+        listener.resume()
+        registered.wait()
+    }
+    func request() {
+        lock.lock()
+        requested = true
+        lock.unlock()
+    }
+    func check() throws {
+        lock.lock()
+        let cancelled = requested
+        lock.unlock()
+        if cancelled { throw QueueMoveCancelled() }
+    }
+    func poll<T>(_ fetch: () throws -> T?) throws -> T? {
+        for attempt in 0..<12 {
+            try check()
+            let value = try fetch()
+            try check()
+            if let value { return value }
+            if attempt < 11 { Thread.sleep(forTimeInterval: 0.07) }
+        }
+        try check()
+        return nil
+    }
+}
+let queueCancellation = QueueCancellation()
+
+func withRestoredShuffle(disable: () throws -> Void, restore: () throws -> Void, operation: () throws -> Void) throws {
+    try disable()
+    do {
+        try operation()
+    } catch {
+        try restore()
+        throw error
+    }
+    try restore()
+}
+
 struct Problem: LocalizedError {
     let errorDescription: String?
     init(_ message: String) { errorDescription = message }
@@ -205,7 +278,7 @@ struct Player {
         } else { result["view"] = "멜론 기본모드를 열어 주세요" }
         return result
     }
-    func playback(_ op: String) throws {
+    func playback(_ op: String, cancellation: QueueCancellation? = nil) throws {
         let items = menu("재생")
         let mapping = ["next":"다음 곡 재생","previous":"이전 곡 재생","pause":"일시정지","play":"재생"]
         if op == "shuffle" || op == "repeat" {
@@ -221,6 +294,7 @@ struct Player {
             guard let toggle else { throw Problem("멜론 재생 메뉴를 찾을 수 없습니다") }
             let playing = (try? state()["playing"] as? Bool) ?? name(toggle).contains("정지")
             if (op == "pause" && !playing) || (op == "play" && playing) { return }
+            try cancellation?.check()
             try press(toggle, "현재 곡을 조작할 수 없습니다")
         } else {
             try press(items.first {name($0) == mapping[op]}, "재생할 곡을 확인해 주세요")
@@ -247,16 +321,15 @@ struct Player {
         guard let table = poll({queueTable()}) else { throw Problem("멜론 재생목록에서 ‘곡’ 탭을 열어 주세요") }
         return table
     }
-    func rowInfo(_ row: Element) -> (title: String, artist: String, album: String, active: Bool) {
+    func rowInfo(_ row: Element) -> QueueRowInfo {
         let cells = nodes(row)
-        var texts: [String] = []
-        var active = false
-        for cell in cells {
-            let contents = nodes(cell)
-            if contents.contains(where:{ name($0).replacingOccurrences(of:"_",with:" ").contains("eq playlist") }) { active = true }
-            if let text = contents.first(where:{ role($0) == "AXStaticText" }), !name(text).isEmpty { texts.append(name(text)) }
+        let active = cells.contains { cell in
+            nodes(cell).contains { name($0).replacingOccurrences(of:"_",with:" ").contains("eq playlist") }
         }
-        return (texts.first ?? "", texts.count > 1 ? texts[1] : "", texts.count > 2 ? texts[2] : "", active)
+        let columns = cells.map { cell in
+            nodes(cell).first(where: { role($0) == "AXStaticText" }).map(name) ?? ""
+        }
+        return QueueRowInfo(columns: columns, active: active)
     }
     func reveal(_ row: Element, table: Element) throws {
         guard AXUIElementSetAttributeValue(table,"AXSelectedRows" as CFString,[row] as CFArray) == .success ||
@@ -346,6 +419,8 @@ struct Player {
         }
     }
     func playInQueue(_ table: Element, rows: [Element], from start: Int, to target: Int) throws {
+        try queueCancellation.check()
+        let selected = rowInfo(rows[target])
         let transport = menu("재생")
         let shuffleOff = transport.first { name($0) == "셔플 없음" }
         let shuffleOn = transport.first { name($0) == "셔플" }
@@ -362,6 +437,7 @@ struct Player {
         func advance() throws {
             var position = start
             for _ in 0..<abs(distance) {
+                try queueCancellation.check()
                 let next = (position + step + rows.count) % rows.count
                 let fresh = nodes(table,"AXRows")
                 guard fresh.count == rows.count, fresh[next] == rows[next], fresh[target] == rows[target] else {
@@ -376,38 +452,66 @@ struct Player {
                           previous.title != expected.title || previous.artist != expected.artist else { return nil }
                     return true
                 }
+                try queueCancellation.check()
                 try press(skip,"플레이리스트에서 곡을 이동할 수 없습니다")
-                if poll(reached) == nil {
+                if try queueCancellation.poll(reached) == nil {
                     // Previous may first rewind the current song to its beginning.
                     let status = try state()
-                    guard step < 0, status["title"] as? String == previous.title,
-                          status["artist"] as? String == previous.artist,
+                    let stillOnPrevious = rowInfo(rows[position]).active ||
+                        (status["title"] as? String == previous.title && status["artist"] as? String == previous.artist)
+                    guard step < 0, stillOnPrevious,
                           let elapsed = status["elapsed"] as? Int, elapsed <= 2 else { throw Problem("목록에서 다음 재생 위치를 확인할 수 없습니다") }
+                    try queueCancellation.check()
                     try press(skip,"이전 곡을 재생할 수 없습니다")
-                    guard poll(reached) != nil else { throw Problem("이전 곡을 확인할 수 없습니다") }
+                    guard try queueCancellation.poll(reached) != nil else { throw Problem("이전 곡을 확인할 수 없습니다") }
                 }
                 position = next
             }
-            if try state()["playing"] as? Bool != true { try playback("play") }
-            guard poll({ (try? state()["playing"] as? Bool) == true ? true : nil }) == true else {
+            try queueCancellation.check()
+            let fresh = nodes(table,"AXRows")
+            guard fresh.count == rows.count, fresh[target] == rows[target] else {
+                throw Problem("재생목록이 바뀌었습니다. 다시 선택해 주세요")
+            }
+            let arrived = rowInfo(rows[target])
+            guard arrived.title == selected.title, arrived.artist == selected.artist else {
+                throw Problem("선택한 곡의 정보가 바뀌었습니다. 다시 선택해 주세요")
+            }
+            let currentTrack = current(try parts().inner)
+            guard arrived.active ||
+                (!selected.title.isEmpty && currentTrack.title == selected.title && currentTrack.artist == selected.artist) else {
+                throw Problem("선택한 곡의 재생 위치를 확인할 수 없습니다")
+            }
+            let playing = try state()["playing"] as? Bool == true
+            try queueCancellation.check()
+            if !playing { try playback("play", cancellation:queueCancellation) }
+            guard try queueCancellation.poll({ (try self.state()["playing"] as? Bool) == true ? true : nil }) == true else {
                 throw Problem("선택한 곡의 재생을 확인할 수 없습니다")
             }
         }
         if restoreShuffle {
-            try press(shuffleOff,"셔플을 잠시 해제할 수 없습니다")
-            do {
-                guard poll({ (try? state()["shuffle"] as? Bool) == false ? true : nil }) == true else { throw Problem("셔플 상태를 확인할 수 없습니다") }
-                try advance()
-            } catch {
+            try queueCancellation.check()
+            try withRestoredShuffle(disable: {
+                try press(shuffleOff,"셔플을 잠시 해제할 수 없습니다")
+            }, restore: {
+                // Restoration must run even after a cancellation request.
                 try press(shuffleOn,"멜론 셔플을 다시 켜 주세요")
-                throw error
-            }
-            try press(shuffleOn,"멜론 셔플을 다시 켜 주세요")
+                guard poll({ (try? self.state()["shuffle"] as? Bool) == true ? true : nil }) == true else {
+                    throw Problem("멜론 셔플 복원을 확인할 수 없습니다")
+                }
+            }, operation: {
+                guard try queueCancellation.poll({ (try self.state()["shuffle"] as? Bool) == false ? true : nil }) == true else {
+                    throw Problem("셔플 상태를 확인할 수 없습니다")
+                }
+                try advance()
+            })
         } else {
             try advance()
         }
+        try queueCancellation.check()
     }
+
     func queue(_ request: Record, _ op: String) throws -> Record {
+        if op == "queuePlay" { try queueCancellation.check() }
         let table: Element
         if op == "queuePreview" {
             if let visibleTable = queueTable() { table = visibleTable }
@@ -457,6 +561,7 @@ struct Player {
         }
         guard !info.title.isEmpty else { throw Problem("목록의 곡 정보를 읽을 수 없습니다") }
         if op == "queuePlay" {
+            try queueCancellation.check()
             guard request["title"] as? String == info.title, request["artist"] as? String == info.artist,
                   request["index"] as? Int == index else { throw Problem("목록이 바뀌었습니다. 다시 선택해 주세요") }
             try playInQueue(table,rows:rows,from:try currentIndex(),to:index)
@@ -490,14 +595,9 @@ struct Player {
                 if position == index {
                     return ["index":position,"title":info.title,"artist":info.artist]
                 }
-                let labels = nodes(rows[position]).lazy.compactMap { cell -> String? in
-                    guard let label = nodes(cell).first(where: { role($0) == "AXStaticText" }) else { return nil }
-                    let text = name(label)
-                    return text.isEmpty ? nil : text
-                }
-                let track = Array(labels.prefix(2))
-                guard track.count == 2 else { return nil }
-                return ["index":position,"title":track[0],"artist":track[1]]
+                let track = rowInfo(rows[position])
+                guard !track.title.isEmpty, !track.artist.isEmpty else { return nil }
+                return ["index":position,"title":track.title,"artist":track.artist]
             }
         }
         return result
@@ -523,10 +623,20 @@ func handle(_ r: Record) throws -> Record {
     }
     return [:]
 }
-do {
-    let request = try JSONSerialization.jsonObject(with: FileHandle.standardInput.readDataToEndOfFile()) as? Record ?? [:]
-    let data = try JSONSerialization.data(withJSONObject: ["ok":true,"data":try handle(request)])
-    FileHandle.standardOutput.write(data)
-} catch {
-    FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject:["ok":false,"error":error.localizedDescription]))
+#if !BRIDGE_TESTS
+@main
+struct MelonBridge {
+    static func main() throws {
+        do {
+            let request = try JSONSerialization.jsonObject(with: FileHandle.standardInput.readDataToEndOfFile()) as? Record ?? [:]
+            if request["op"] as? String == "queuePlay" { queueCancellation.listenForTermination() }
+            let data = try JSONSerialization.data(withJSONObject: ["ok":true,"data":try handle(request)])
+            FileHandle.standardOutput.write(data)
+        } catch is QueueMoveCancelled {
+            FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject:["ok":false,"cancelled":true,"error":"곡 이동을 취소했습니다"]))
+        } catch {
+            FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject:["ok":false,"error":error.localizedDescription]))
+        }
+    }
 }
+#endif

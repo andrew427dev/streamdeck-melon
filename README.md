@@ -7,11 +7,11 @@ Mac에서 실행 중인 멜론의 볼륨, 재생 상태, 재생목록을 Stream 
 ## 설치
 
 1. macOS 13 이상에서 멜론 Mac 플레이어와 Stream Deck 7.1 이상을 설치해 주세요.
-2. GitHub 릴리스에서 `local.melon.deck.streamDeckPlugin`을 내려받아 두 번 클릭해 주세요. [릴리스 및 설치 파일](https://github.com/andrew427dev/streamdeck-melon/releases)
+2. 권장 베타 **v1.1.0.13**의 `local.melon.deck.streamDeckPlugin`을 내려받아 두 번 클릭해 주세요. [설치 파일과 변경 내용](https://github.com/andrew427dev/streamdeck-melon/releases/tag/v1.1.0.13)
 3. Stream Deck에서 **멜론 Plus** 프로필을 선택해 주세요. 목록에 보이지 않으면 같은 릴리스의 `melon-plus.streamDeckProfile`을 열어 주세요.
 4. 멜론 기본모드를 열어 주세요. 연결 확인에서 권한 안내가 뜨면 macOS **시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용**에서 Stream Deck을 허용해 주세요.
 
-세 번째 다이얼을 돌리면 멜론 볼륨이 기본 5%씩 바뀝니다. 한 번 눌러 재생하거나 멈추고, 두 번 눌러 다음 곡으로, 세 번 눌러 이전 곡으로 이동합니다. 네 번째 다이얼은 대기열을 탐색하며, 누르거나 터치해 선택한 곡을 재생합니다. [전체 조작법과 지원 범위](사용안내.md)
+세 번째 다이얼을 돌리면 멜론 볼륨이 기본 10%씩 바뀝니다. 한 번 눌러 재생하거나 멈추고, 두 번 눌러 다음 곡으로, 세 번 눌러 이전 곡으로 이동합니다. 네 번째 다이얼은 대기열을 탐색하며, 누르거나 터치해 선택한 곡을 재생합니다. [전체 조작법과 지원 범위](사용안내.md)
 
 ## 멜론 실행 아이콘
 
@@ -29,6 +29,14 @@ npm test
 npm run build
 ```
 
-빌드는 Swift 소스에서 Apple Silicon 및 Intel용 실행 파일을 만들고, 테스트를 실행한 뒤 저장소 루트에 `local.melon.deck.streamDeckPlugin`을 생성합니다. GitHub Actions에서도 푸시와 풀 리퀘스트마다 macOS 빌드와 패키지 검사를 실행합니다.
+빌드는 Swift 소스에서 Apple Silicon 및 Intel용 실행 파일을 만들고 회귀 검사를 실행합니다. 설치 파일과 별도 프로필, `SHA256SUMS.txt`는 `dist/`에 모입니다. 패키지의 소스 일치, 내장·별도 프로필의 버전, Universal 실행 파일과 서명도 검사합니다.
+
+GitHub Actions는 푸시와 풀 리퀘스트마다 같은 검사를 실행합니다. manifest와 프로필 버전을 함께 올린 뒤 `v1.1.0.13`과 같은 태그를 푸시하면 검증된 파일로 베타 릴리스를 만듭니다. 태그와 내부 버전이 다르면 배포가 실패합니다. 기존 릴리스가 있는 태그를 다시 검사할 때는 게시된 파일의 일치 여부를 확인합니다.
+
+`docs/melon-plus.png`는 v1.0 시기의 전체 배치 참고 이미지입니다. 현재 멀티미디어·대기열 화면은 위의 실행·종료 예시를 참고해 주세요.
 
 플러그인의 키·다이얼 이벤트 처리는 [deck.mjs](local.melon.deck.sdPlugin/bin/deck.mjs), 멜론 Mac 앱 조작은 [MelonBridge.swift](native/MelonBridge.swift)에서 확인하실 수 있습니다.
+
+## 라이선스
+
+소스 코드는 MIT 라이선스로 배포합니다. 멜론 상표와 서비스는 해당 권리자의 소유입니다. [라이선스 전문](LICENSE)

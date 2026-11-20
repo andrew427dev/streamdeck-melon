@@ -64,6 +64,7 @@ export function coverFor(track) {
   const key = JSON.stringify([track.title,track.artist,track.album]);
   const cached = artwork.get(key);
   if (cached && cached.expires > Date.now()) return cached.job;
+  const entry = {job:null,expires:Infinity};
   const job = (async () => {
     // The official search response can include similarly named recordings. Match both fields.
     const rows=await search(track.title).catch(()=>[]);
@@ -83,8 +84,13 @@ export function coverFor(track) {
     return 'data:'+mime+';base64,'+bytes.toString('base64');
   })();
   if (artwork.size >= 80) artwork.delete(artwork.keys().next().value);
-  artwork.set(key,{job,expires:Date.now()+600000});
-  job.catch(()=>artwork.delete(key));
+  entry.job=job;
+  artwork.set(key,entry);
+  job.then(uri=>{
+    entry.expires=Date.now()+(uri?600000:5000);
+  },()=>{
+    entry.expires=Date.now()+5000;
+  });
   return job;
 }
 
