@@ -11,6 +11,6 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "@elgato/cli": "1.10.2"
+    "@elgato/cli": "1.10.5"
   }
 }
